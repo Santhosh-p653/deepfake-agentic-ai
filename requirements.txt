@@ -2,3 +2,6 @@ fastapi
 uvicorn[standard]
 ffmpeg-python
 opencv-python-headless
+sqlalchemy
+psycopg2-binary
+python-dotenv
