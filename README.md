@@ -1,11 +1,11 @@
 #Deepfake Agentic AI
 
-An agent-based  deepfake detectionsystem using computer vision,DL,and vector similarity search.
+An agent-based  deepfake detection system using computer vision,DL,and vector similarity search.
 
 ##Planned Architecture
 -FFmpeg +opencv->frame&audio extraction
 -RetineFace->Face Detection
--Xception->Feauture Extraction
+-Xception->Feature Extraction
 -Transformer->Temporal modeling
 -Chroma-Vector search
 -FastAPI-inference APIs
@@ -52,3 +52,5 @@ git pull
 docker compose up -d --build
 ```
 
+For detailed architecture see the `docs/architecture.md`.
+For troubleshooting guide on configuration see `docs/troubleshooting.md` for common issues,including docker in wsl and postgres errors,DNS errors.
