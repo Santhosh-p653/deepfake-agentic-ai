@@ -3,21 +3,24 @@ services:
   api:
     build: .
     container_name: fastapi_app
-    ports:  ["8000:8000"]
+    ports:
+      - "8000:8000"
     volumes:
       - .:/app
     env_file:
-      -  .env
+      - .env
     depends_on:
-      -  db
+      - db
   db:
     image: postgres:15
     container_name: postgres_db
     restart: always
     env_file:
-      -  .env
+      - .env
     volumes:
-      -  postgres_data:/var/lib/postgresql/data
-    ports: ["5432:5432"]
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
 volumes:
   postgres_data:
+  
