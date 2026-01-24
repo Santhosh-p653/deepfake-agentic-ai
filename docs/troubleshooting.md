@@ -5,7 +5,7 @@ The issues I faced during setting up this configuration are
 4.Socket Permission Issues.
 
 ```
-sudo nano /etc/rresolv.conf
+sudo nano /etc/resolv.conf
 sudo chattr +i /etc/resolv.conf
 wsl --shutdown
 sudo dockerd
