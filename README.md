@@ -9,11 +9,13 @@ An agent-based  deepfake detection system using computer vision,DL,and vector si
 -Transformer->Temporal modeling
 -Chroma-Vector search
 -FastAPI-inference APIs
-PostgreSQL->Metadata Storage
+-PostgreSQL->Metadata Storage
 -Docker->Containerized deployment
 
 ##Status
-Initial Setup in progress.
+Most of configs were resolved.
+The repo is stable with basic setup to build the system further.
+
 
 ##Setup
 
