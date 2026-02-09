@@ -1,4 +1,4 @@
-\#SYSTEM ARCHITECTURE
+#SYSTEM ARCHITECTURE
 This system follows a modular ,agent based pipeline:
 
 1.Media Insertion

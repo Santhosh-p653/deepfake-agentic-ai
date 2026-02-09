@@ -1,5 +1,4 @@
 opencv-python-headless
-retina-face
 faiss-cpu
 ffmpeg-python
 numpy
