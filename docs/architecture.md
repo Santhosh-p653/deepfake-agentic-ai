@@ -49,3 +49,6 @@ Details:
 4. Keeps orchestration logic clean.
 5. Easy to scale request handling.
 6. Faster iteration and debugging. 
+#UPDATED VERSION v2:
+This system follows a containerized agent based microservices architecture,with isolated API,Agents,ML and DB services,packaged as independent docker images
+ and ready for deployment via GHCR.
