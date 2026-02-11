@@ -2,3 +2,6 @@ fastapi
 uvicorn[standard]
 sqlalchemy
 psycopg2-binary
+langgraph
+langchain
+langchain-core
