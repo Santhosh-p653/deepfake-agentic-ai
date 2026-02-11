@@ -1,4 +1,8 @@
+<<<<<<< Updated upstream
 from fastapi import FastAPI, Response, status
+=======
+from fastapi import FastAPI
+>>>>>>> Stashed changes
 from db import check_db_connection
 import logging
 
