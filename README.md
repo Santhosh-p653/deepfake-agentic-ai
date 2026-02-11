@@ -56,3 +56,8 @@ docker compose up -d --build
 
 For detailed architecture see the `docs/architecture.md`.
 For troubleshooting guide on configuration see `docs/troubleshooting.md` for common issues,including docker in wsl and postgres errors,DNS errors.
+
+To  check database connection visit the endpoint 
+```
+http://localhost:8000/health
+```
