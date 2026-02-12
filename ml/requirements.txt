@@ -2,3 +2,4 @@ opencv-python-headless
 faiss-cpu
 ffmpeg-python
 numpy
+insightface
