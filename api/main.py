@@ -1,3 +1,5 @@
+import docker
+import asyncio
 import subprocess
 import json
 from fastapi import FastAPI, Response, status
@@ -21,6 +23,7 @@ async def health(response: Response):
     return {"status": "error", "database": "disconnected"}
 @app.get("/run-agents")
 async def run_agents():
+	logger.info("Triggerring agents")
 	try:
 		result=subprocess.run(["docker","run","--rm","--env-file",".env","deepfake-agentic-ai-agents","python","agents/task_runner.py"],capture_output=True,text=True)
 		logger.info(f"Agents output:{result.stdout}")
