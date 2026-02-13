@@ -1,69 +1,39 @@
+# 🛡️ Deepfake Agentic AI
+**High-performance forensic analysis leveraging Computer Vision and Agentic Workflows.**
+
+Deepfake Agentic AI is a sophisticated, service-oriented system designed to detect spatial and temporal inconsistencies in digital media. By utilizing a multi-stage pipeline—from face alignment to transformer-based temporal analysis—it provides an industry-standard approach to verifying media authenticity.
+
+---
+
+## 🏗️ System Architecture & Workflow
+
+The system is built as a modular microservices mesh, ensuring that compute-intensive tasks like deep learning inference do not bottleneck the API responsiveness.
+
+1.  **Preprocessing (FFmpeg & OpenCV)**: Handles high-speed frame extraction and isolates audio streams for potential multi-modal forensic checks.
+2.  **Detection Pipeline**:
+    * **RetinaFace**: Performs high-accuracy facial localization and landmark alignment to normalize input data.
+    * **Xception**: A CNN backbone specialized in forensic feature extraction, detecting artifacts in facial textures.
+    * **Transformers**: Models the "temporal coherence" between frames to identify jitter or blending errors common in deepfakes.
+3.  **Vector Intelligence (ChromaDB)**: Stores high-dimensional facial embeddings to perform similarity search and identify known manipulation patterns.
+4.  **Backend (FastAPI & PostgreSQL)**: Manages high-concurrency API requests, stores metadata, and maintains a persistent audit log of all scans.
 
 
-###Deepfake Agentic AI
-A high-performance, agent-based deepfake detection system leveraging Computer Vision (CV), Deep Learning (DL), and Vector Similarity Search. This project provides a robust pipeline for analyzing temporal and spatial inconsistencies in digital media to verify authenticity.
 
-System Architecture
-The system is designed with a modular service-oriented architecture to handle compute-intensive inference tasks:
+---
 
-Preprocessing: FFmpeg and OpenCV for precise frame extraction and audio stream isolation.
+## 🚀 Getting Started
 
-Detection Pipeline: * RetinaFace: High-accuracy face detection and alignment.
+### 📋 Prerequisites
+* **Docker & Docker Compose** installed.
+* **Git** installed and configured with SSH.
 
-Xception: Feature extraction optimized for forensic facial analysis.
+### ⚙️ Installation & Deployment
+Run the following commands to pull the project and spin up the entire environment (API, DB, and Vector Store) automatically:
 
-Transformers: Temporal modeling to detect inconsistencies across video frames.
-
-Vector Engine: ChromaDB for high-dimensional vector search and similarity matching.
-
-Backend & Orchestration: * FastAPI: High-concurrency inference APIs.
-
-PostgreSQL: Relational storage for metadata and audit logs.
-
-Docker: Full containerization for reproducible environments.
-
- Getting Started
-Prerequisites
-Docker and Docker Compose
-
-Git
-
-Installation
-Clone the repository:
-
-Bash
-git clone https://github.com/Santhosh-p653/deepfake-agentic-ai
+```bash
+# 1. Clone the repository
+git clone [https://github.com/Santhosh-p653/deepfake-agentic-ai](https://github.com/Santhosh-p653/deepfake-agentic-ai)
 cd deepfake-agentic-ai
-Spin up the environment: The entire stack (API, Database, and Vector Store) is orchestrated via Docker:
 
-Bash
+# 2. Start the orchestrated environment
 docker compose up -d --build
-The API will be accessible at http://localhost:8000.
-
- Development Workflow
-System Health
-To verify the integrity of the service mesh and database connectivity, visit the automated health check endpoint: http://localhost:8000/health
-
-Modifying the Source
-The core logic resides in the /api directory. If you modify the source code or update dependencies:
-
-Add new packages to requirements.txt.
-
-Rebuild and restart the containers:
-
-Bash
-docker compose up -d --build
-Resource Management
-Stop Services: docker compose down
-
-View Logs: docker compose logs -f
-
- Current Status
-[x] Core infrastructure and service orchestration resolved.
-
-[x] Stable environment for database and API interaction.
-
-[ ] Integration of Transformer-based temporal modeling (In Progress).
-
-For a deep dive into the underlying logic, see docs/architecture.md. If you encounter environment-specific issues (WSL, DNS, or Postgres connectivity), refer to the Troubleshooting Guide.
-
