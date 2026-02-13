@@ -3,5 +3,4 @@ WORKDIR /app
 COPY agents/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY agents ./agents
-CMD ["python","agents/worker.py"]
 CMD ["python","agents/task_runner.py"]
