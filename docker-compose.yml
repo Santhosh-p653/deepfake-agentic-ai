@@ -1,22 +1,32 @@
 version: "3.9"
+
 services: 
   api:
     build: {context: ".",dockerfile: "Dockerfile.api"}
     ports: ["8000:8000"]
     env_file: [".env"]
     depends_on: ["db"]
+    networks: ["bridge_network"]
   agents:
     build: {context: ".",dockerfile: "Dockerfile.agents"}
     env_file: [".env"]
     depends_on: ["api"]
+    networks: ["bridge_network"]
   ml:
     build: {context: ".",dockerfile: "Dockerfile.ml"}
     env_file: [".env"]
+    networks: ["bridge_network"]
 
   db:
     image: "postgres:15"
     restart: "always"
     env_file: [".env"]
     volumes: ["postgres_data:/var/lib/postgresql/data"]
+    networks: ["bridge_network"]
+
 volumes:
   postgres_data: {}
+
+networks:
+   bridge_network:
+      driver: bridge

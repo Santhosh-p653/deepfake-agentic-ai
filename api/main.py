@@ -21,6 +21,7 @@ async def health(response: Response):
     
     response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     return {"status": "error", "database": "disconnected"}
+
 @app.get("/run-agents")
 async def run_agents():
 	logger.info("Triggerring agents")
@@ -34,3 +35,6 @@ async def run_agents():
 	except  Exception as e:
 		logger.error(f"Failed to run agents:{e}")
 		return{"error":str(e)}
+@app.get("/ping")
+def ping():
+	return{"message":"pong"}
