@@ -1,4 +1,4 @@
-
+import requests
 import asyncio
 import subprocess
 import json
@@ -24,17 +24,11 @@ async def health(response: Response):
 
 @app.get("/run-agents")
 async def run_agents():
-	logger.info("Triggerring agents")
 	try:
-		result=subprocess.run(["docker","run","--rm","--env-file",".env","deepfake-agentic-ai-agents","python","agents/task_runner.py"],capture_output=True,text=True)
-		logger.info(f"Agents output:{result.stdout}")
-		try:
-			return json.loads(result.stdout)
-		except json.JSONDecodeError:
-			return{"output":result.stdout}
-	except  Exception as e:
-		logger.error(f"Failed to run agents:{e}")
-		return{"error":str(e)}
+		response=requests.get("http://agents:8123/run",timeout=10)
+		return response.json()
+	except Exception as e:
+		return {"error":str(e)}
 @app.get("/ping")
 def ping():
 	return{"message":"pong"}

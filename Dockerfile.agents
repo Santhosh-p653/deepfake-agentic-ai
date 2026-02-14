@@ -2,5 +2,7 @@ FROM python:3.11-slim
 WORKDIR /app
 COPY agents/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+COPY agents/re.txt .
+RUN pip install --no-cache-dir -r re.txt
 COPY agents ./agents
-CMD ["python","agents/task_runner.py"]
+CMD ["python","agents/app.py"]

@@ -11,6 +11,7 @@ services:
     build: {context: ".",dockerfile: "Dockerfile.agents"}
     env_file: [".env"]
     depends_on: ["api"]
+    ports: ["8123:8123"]
     networks: ["bridge_network"]
   ml:
     build: {context: ".",dockerfile: "Dockerfile.ml"}

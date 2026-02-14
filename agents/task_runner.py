@@ -3,11 +3,19 @@ import chromadb
 import json
 
 def run_task():
-	lg_client=get_client(url="http://localhost:8123")
-	chroma_client=chromadb.Client()
-	result_lg=f"Langgraph connected"
-	result_chroma="Chromadb processed"
-	output={"langgraph":result_lg,"chromadb":result_chroma}
-	print(json.dumps(output))
-if __name__ == "__main__":
-	run_task()
+	result={"Langgraph":"NOT_CHECKED","Chromadb":"NOT_CHECKED"}
+	try:
+		lg_client=get_client(url="http://langgraph:8123")
+		lg_client.health()if hasattr(lg_client,"health")else None
+		result["Langgraph"]="connected"
+	except Exception as e:
+		result["Langgraph"]=f"Error:{str(e)}"
+	try:
+		chroma_client=chromadb.Client()
+		chroma_client.heartbeat()if hasattr(chroma_client,"heartbeat") else None
+		result["Chromadb"]="connected"
+	except Exception as e:
+		result["Chromadb"]=f"Error:{str(e)}"
+
+	return result
+
