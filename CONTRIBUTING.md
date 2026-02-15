@@ -18,17 +18,20 @@ By contributing, you agree to follow our [Code of Conduct](CODE_OF_CONDUCT.md) a
 - Explain your idea clearly and why it would benefit the project.
 - If possible, propose a solution or reference resources.
 
-### ✅ Pull Requests (Code Contributions)
-1. Fork the repository.
-2. Create a branch with a descriptive name:
-3. git checkout -b feature/add-xyz
-4. 3. Make your changes.
-4. Write clear commit messages.
-5. Test your changes locally.
-6. Submit a Pull Request to the `main` branch with:
-- Description of changes
-- Relevant issue number (if applicable)
-- Screenshots or examples (if UI/UX related)
+## ✅ Pull Requests (Code Contributions)
+To contribute code, please follow these steps:
+1. **Fork** the repository.
+2. **Create a new branch** with a descriptive name:
+   ```bash
+   git checkout -b feature/add-xyz
+   ```
+3. Make your changes.
+4. Write clear and meaningful commit messages.
+5. Test your changes locally before submitting.
+6. Submit a Pull Request to the `main` branch including:
+   * A clear description of your changes
+   * The relevant issue number (if applicable)
+   * Screenshots or examples (if UI/UX related)
 
 **Note:** All contributions must follow ethical AI practices. Avoid adding features that can be misused for malicious deepfake generation.
 
@@ -81,4 +84,4 @@ By contributing, you agree to follow our [Code of Conduct](CODE_OF_CONDUCT.md) a
 ## 7. Thank You!
 
 Your contributions help **Deepfake-Agentic-AI** grow into a safe, responsible, and innovative project.  
-Every improvement — big or small — is appreciated!
+Every improvement, big or small is always appreciated!

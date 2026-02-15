@@ -1,21 +1,44 @@
-# Security Policy
+# 🔐 Security Policy
 
-## Supported Versions
+## 📌 Supported Versions
 
-Use this section to tell people about which versions of your project are
-currently being supported with security updates.
+The project is currently under active development.  
+Security updates are provided only for the latest version on the `main` branch.
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 5.1.x   | :white_check_mark: |
-| 5.0.x   | :x:                |
-| 4.0.x   | :white_check_mark: |
-| < 4.0   | :x:                |
+| Version | Supported |
+|---------|-----------|
+| main    | ✅ Yes    |
+| older versions | ❌ No |
 
-## Reporting a Vulnerability
+---
 
-Use this section to tell people how to report a vulnerability.
+## 🚨 Reporting a Vulnerability
 
-Tell them where to go, how often they can expect to get an update on a
-reported vulnerability, what to expect if the vulnerability is accepted or
-declined, etc.
+If you discover a security vulnerability, please report it responsibly.
+
+### 📬 How to Report
+
+- Open a **private security advisory** (if enabled), OR  
+- Contact the maintainers directly via GitHub.
+
+Please include:
+- A clear description of the vulnerability
+- Steps to reproduce
+- Potential impact
+- Suggested mitigation (if available)
+
+---
+
+## ⏳ What to Expect
+
+- You will receive an acknowledgment within 3–5 working days.
+- The maintainers will investigate and validate the report.
+- If confirmed, a fix will be developed and released promptly.
+- Public disclosure will occur only after a fix is available.
+
+---
+
+## ⚠️ Responsible Disclosure
+
+Please do **not** publicly disclose security vulnerabilities before they are reviewed and addressed.  
+This helps protect users of the project.
