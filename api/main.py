@@ -28,7 +28,8 @@ async def run_agents():
 		response=requests.get("http://agents:8123/run",timeout=10)
 		return response.json()
 	except Exception as e:
-		return {"error":str(e)}
+		logger.exception("Error while calling agents service")
+		return {"error": "Failed to run agents"}
 @app.get("/ping")
 def ping():
 	return{"message":"pong"}
