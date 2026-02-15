@@ -1,7 +1,7 @@
 # 🛡️ Deepfake Agentic AI
 **High-performance forensic analysis leveraging Computer Vision and Agentic Workflows.**
 
-Deepfake Agentic AI is a sophisticated, service-oriented system designed to detect spatial and temporal inconsistencies in digital media. By utilizing a multi-stage pipeline—from face alignment to transformer-based temporal analysis—it provides an industry-standard approach to verifying media authenticity.
+Deepfake Agentic AI is a sophisticated, service-oriented system designed to detect spatial and temporal inconsistencies in digital media. By utilizing a multi-stage pipeline from face alignment to transformer-based temporal analysis it provides an industry-standard approach to verifying media authenticity.
 
 ---
 
@@ -24,16 +24,20 @@ The system is built as a modular microservices mesh, ensuring that compute-inten
 ## 🚀 Getting Started
 
 ### 📋 Prerequisites
-* **Docker & Docker Compose** installed.
-* **Git** installed and configured with SSH.
+
+- **Docker & Docker Compose** installed
+- **Git** installed and configured (SSH optional)
+
+---
 
 ### ⚙️ Installation & Deployment
-Run the following commands to pull the project and spin up the entire environment (API, DB, and Vector Store) automatically:
+
+Run the following commands to clone the project and start the full environment (API, Database, and Vector Store):
 
 ```bash
-# 1. Clone the repository
-git clone [https://github.com/Santhosh-p653/deepfake-agentic-ai](https://github.com/Santhosh-p653/deepfake-agentic-ai)
+# 1️⃣ Clone the repository
+git clone https://github.com/Santhosh-p653/deepfake-agentic-ai.git
 cd deepfake-agentic-ai
 
-# 2. Start the orchestrated environment
+# 2️⃣ Start the orchestrated environment
 docker compose up -d --build
