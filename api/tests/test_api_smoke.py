@@ -13,6 +13,7 @@ from pathlib import Path
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _can_import(module: str) -> bool:
     """Return True if module is importable, False otherwise."""
     try:
@@ -25,6 +26,7 @@ def _can_import(module: str) -> bool:
 # ---------------------------------------------------------------------------
 # Structural tests — always pass regardless of implementation state
 # ---------------------------------------------------------------------------
+
 
 class TestProjectStructure:
     """Verify the api/ directory has expected files."""
@@ -39,6 +41,7 @@ class TestProjectStructure:
     def test_no_syntax_errors(self):
         """All Python files in api/ must be syntax-error free."""
         import ast
+
         errors = []
         for f in Path("api").rglob("*.py"):
             try:
@@ -52,28 +55,30 @@ class TestProjectStructure:
 # Dependency presence tests
 # ---------------------------------------------------------------------------
 
+
 class TestCoreDependencies:
     """Check that declared dependencies are actually installable."""
 
     def test_fastapi_importable(self):
-        assert _can_import("fastapi"), (
-            "fastapi must be importable — add it to api/requirements.txt"
-        )
+        assert _can_import(
+            "fastapi"
+        ), "fastapi must be importable — add it to api/requirements.txt"
 
     def test_uvicorn_importable(self):
-        assert _can_import("uvicorn"), (
-            "uvicorn must be importable — add it to api/requirements.txt"
-        )
+        assert _can_import(
+            "uvicorn"
+        ), "uvicorn must be importable — add it to api/requirements.txt"
 
     def test_pydantic_importable(self):
-        assert _can_import("pydantic"), (
-            "pydantic must be importable — required by FastAPI"
-        )
+        assert _can_import(
+            "pydantic"
+        ), "pydantic must be importable — required by FastAPI"
 
 
 # ---------------------------------------------------------------------------
 # FastAPI app smoke test (only runs if app module exists)
 # ---------------------------------------------------------------------------
+
 
 class TestFastAPIAppSmoke:
     """
@@ -100,6 +105,7 @@ class TestFastAPIAppSmoke:
         if app is None:
             # Not yet implemented — emit a warning instead of failing
             import warnings
+
             warnings.warn(
                 "FastAPI app not yet importable — skipping app smoke tests. "
                 "Create api/main.py with an `app = FastAPI()` instance.",
@@ -121,6 +127,6 @@ class TestFastAPIAppSmoke:
 
         client = TestClient(app)
         response = client.get("/health")
-        assert response.status_code == 200, (
-            f"GET /health returned {response.status_code} — add a /health endpoint"
-          )
+        assert (
+            response.status_code == 200
+        ), f"GET /health returned {response.status_code} — add a /health endpoint"
