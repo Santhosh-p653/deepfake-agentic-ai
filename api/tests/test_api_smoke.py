@@ -1,3 +1,4 @@
+
 """
 Basic smoke tests for the API service.
 These run in GitHub Actions on every push — no local setup needed.
@@ -6,12 +7,7 @@ Place this file at: api/tests/test_api_smoke.py
 """
 
 import importlib
-import sys
 from pathlib import Path
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _can_import(module: str) -> bool:
@@ -21,11 +17,6 @@ def _can_import(module: str) -> bool:
         return True
     except ImportError:
         return False
-
-
-# ---------------------------------------------------------------------------
-# Structural tests — always pass regardless of implementation state
-# ---------------------------------------------------------------------------
 
 
 class TestProjectStructure:
@@ -48,12 +39,7 @@ class TestProjectStructure:
                 ast.parse(f.read_text(encoding="utf-8"))
             except SyntaxError as e:
                 errors.append(f"{f}: {e}")
-        assert not errors, f"Syntax errors found:\n" + "\n".join(errors)
-
-
-# ---------------------------------------------------------------------------
-# Dependency presence tests
-# ---------------------------------------------------------------------------
+        assert not errors, "Syntax errors found:\n" + "\n".join(errors)
 
 
 class TestCoreDependencies:
@@ -75,11 +61,6 @@ class TestCoreDependencies:
         ), "pydantic must be importable — required by FastAPI"
 
 
-# ---------------------------------------------------------------------------
-# FastAPI app smoke test (only runs if app module exists)
-# ---------------------------------------------------------------------------
-
-
 class TestFastAPIAppSmoke:
     """
     Light smoke tests for the FastAPI app.
@@ -89,7 +70,6 @@ class TestFastAPIAppSmoke:
 
     def _get_app(self):
         """Try to import the FastAPI app — return None if not ready."""
-        # Adjust 'api.main' or 'api.app' to match your actual module path
         for module_path in ("api.main", "main", "app"):
             try:
                 mod = importlib.import_module(module_path)
@@ -103,7 +83,6 @@ class TestFastAPIAppSmoke:
         """App module should exist once api/ is wired up."""
         app = self._get_app()
         if app is None:
-            # Not yet implemented — emit a warning instead of failing
             import warnings
 
             warnings.warn(
@@ -119,14 +98,14 @@ class TestFastAPIAppSmoke:
         try:
             from fastapi.testclient import TestClient
         except ImportError:
-            return  # httpx not installed, skip
+            return
 
         app = self._get_app()
         if app is None:
-            return  # not yet implemented
+            return
 
         client = TestClient(app)
         response = client.get("/health")
-        assert (
-            response.status_code == 200
-        ), f"GET /health returned {response.status_code} — add a /health endpoint"
+        assert response.status_code == 200, (
+            f"GET /health returned {response.status_code} — add a /health endpoint"
+        )
