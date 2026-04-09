@@ -1,4 +1,3 @@
-
 """
 Basic smoke tests for the API service.
 These run in GitHub Actions on every push — no local setup needed.
@@ -106,6 +105,6 @@ class TestFastAPIAppSmoke:
 
         client = TestClient(app)
         response = client.get("/health")
-        assert response.status_code == 200, (
-            f"GET /health returned {response.status_code} — add a /health endpoint"
-        )
+        assert (
+            response.status_code == 200
+        ), f"GET /health returned {response.status_code} — add a /health endpoint"
