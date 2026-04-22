@@ -1,3 +1,4 @@
+
 import requests
 from fastapi import FastAPI, Response, status, UploadFile, File, Depends
 from fastapi.responses import JSONResponse
@@ -55,14 +56,18 @@ async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db
     size_mb = round(len(file_bytes) / (1024 * 1024), 4)
     ext = file.filename.rsplit(".", 1)[-1].lower()
 
-    record = MediaUpload(
-        filename=file.filename,
-        file_type=ext,
-        size_mb=size_mb,
-    )
-    db.add(record)
-    db.commit()
-    db.refresh(record)
+    if db:
+        record = MediaUpload(
+            filename=file.filename,
+            file_type=ext,
+            size_mb=size_mb,
+        )
+        db.add(record)
+        db.commit()
+        db.refresh(record)
+        record_id = record.id
+    else:
+        record_id = None
 
-    logger.info("Upload accepted and recorded: id=%d file=%s size_mb=%f", record.id, record.filename, record.size_mb)
-    return {"status": "accepted", "id": record.id, "filename": record.filename, "size_mb": size_mb}
+    logger.info("Upload accepted: id=%s file=%s size_mb=%f", record_id, file.filename, size_mb)
+    return {"status": "accepted", "id": record_id, "filename": file.filename, "size_mb": size_mb}
