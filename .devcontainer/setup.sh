@@ -5,6 +5,8 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "🚀  deepfake-agentic-ai  Codespace Setup"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
+echo "📦 Installing system dependencies..."
+apt-get update -qq && apt-get install -y libmagic1
 # --- 1. Copy .env if it doesn't exist ---
 if [ ! -f .env ]; then
   echo "📋 Creating .env from .env.example..."
