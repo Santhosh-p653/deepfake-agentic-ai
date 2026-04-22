@@ -1,8 +1,10 @@
 <<<<<<< Updated upstream
 import requests
-from fastapi import FastAPI, Response, status, UploadFile, File
+from fastapi import FastAPI, Response, status, UploadFile, File, Depends
 from fastapi.responses import JSONResponse
-from .db import check_db_connection
+from sqlalchemy.orm import Session
+from .db import check_db_connection, get_db, init_db
+from .models import MediaUpload
 from .input_validator import validate_input
 =======
 from fastapi import FastAPI
@@ -14,6 +16,11 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
+
+
+@app.on_event("startup")
+def on_startup():
+    init_db()
 
 
 @app.get("/health")
@@ -42,7 +49,7 @@ def ping():
 
 
 @app.post("/upload")
-async def upload_file(file: UploadFile = File(...)):
+async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db)):
     file_bytes = await file.read()
     valid, message = validate_input(file.filename, file_bytes)
 
@@ -50,5 +57,17 @@ async def upload_file(file: UploadFile = File(...)):
         logger.warning("Upload rejected: %s | file=%s", message, file.filename)
         return JSONResponse(status_code=400, content={"status": "rejected", "reason": message})
 
-    logger.info("Upload accepted: file=%s size_bytes=%d", file.filename, len(file_bytes))
-    return {"status": "accepted", "filename": file.filename, "size_bytes": len(file_bytes)}
+    size_mb = round(len(file_bytes) / (1024 * 1024), 4)
+    ext = file.filename.rsplit(".", 1)[-1].lower()
+
+    record = MediaUpload(
+        filename=file.filename,
+        file_type=ext,
+        size_mb=size_mb,
+    )
+    db.add(record)
+    db.commit()
+    db.refresh(record)
+
+    logger.info("Upload accepted and recorded: id=%d file=%s size_mb=%f", record.id, record.filename, record.size_mb)
+    return {"status": "accepted", "id": record.id, "filename": record.filename, "size_mb": size_mb}
