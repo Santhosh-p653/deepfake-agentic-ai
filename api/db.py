@@ -7,15 +7,25 @@ from .models import Base
 
 load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
-engine = create_engine(DATABASE_URL) if DATABASE_URL else None
 
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+try:
+    engine = create_engine(DATABASE_URL) if DATABASE_URL else None
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+except Exception:
+    engine = None
+    SessionLocal = None
 
 def init_db():
     if engine:
-        Base.metadata.create_all(bind=engine)
+        try:
+            Base.metadata.create_all(bind=engine)
+        except Exception:
+            pass
 
 def get_db():
+    if not SessionLocal:
+        yield None
+        return
     db = SessionLocal()
     try:
         yield db
