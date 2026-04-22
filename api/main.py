@@ -1,4 +1,3 @@
-<<<<<<< Updated upstream
 import requests
 from fastapi import FastAPI, Response, status, UploadFile, File, Depends
 from fastapi.responses import JSONResponse
@@ -6,10 +5,6 @@ from sqlalchemy.orm import Session
 from .db import check_db_connection, get_db, init_db
 from .models import MediaUpload
 from .input_validator import validate_input
-=======
-from fastapi import FastAPI
-from db import check_db_connection
->>>>>>> Stashed changes
 import logging
 
 logging.basicConfig(level=logging.INFO)
