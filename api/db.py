@@ -6,7 +6,6 @@ from sqlalchemy.exc import SQLAlchemyError
 from .models import Base
 
 load_dotenv()
-<<<<<<< Updated upstream
 DATABASE_URL = os.getenv("DATABASE_URL")
 engine = create_engine(DATABASE_URL) if DATABASE_URL else None
 
@@ -32,22 +31,3 @@ def check_db_connection():
             return True
     except SQLAlchemyError:
         return False
-<<<<<<< HEAD
-
-=======
-DATABASE_URL=os.getenv("DATABASE_URL")
-engine=create_engine(DATABASE_URL)
-def check_db_connection():
-	try:
-		with engine.connect() as connection:
-		connection.execute(text("SELECT 1"))
-		return True
-		print("Database Connection Success")
-		connection.close()
-	except SQLAlchemyError as e:
-		print("Database Connection Failed")
-		print(str(e))
-		return False
->>>>>>> Stashed changes
-=======
->>>>>>> 9195ab164a70f025dd621f43524bb0141f99eff0
