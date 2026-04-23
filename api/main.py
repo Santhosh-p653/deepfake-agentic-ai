@@ -1,3 +1,5 @@
+
+import uuid
 import requests
 from datetime import datetime
 from fastapi import FastAPI, Response, status, UploadFile, File, Depends
@@ -10,6 +12,7 @@ from .temp_manager import (
     ensure_temp_dir, write_to_temp, delete_from_temp, cleanup_on_startup, TEMP_FILE_CAP
 )
 from .ml_stub import run_ml
+from .minio_client import ensure_bucket, upload_to_minio
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -22,6 +25,7 @@ app = FastAPI()
 def on_startup():
     init_db()
     ensure_temp_dir()
+    ensure_bucket()
     from .db import SessionLocal
     if SessionLocal:
         db = SessionLocal()
@@ -127,29 +131,45 @@ async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db
     except Exception:
         logger.exception("Failed to write temp file: file=%s", file.filename)
         if db and record_id:
-            update_status(db, record_id, ProcessingStatus.failed, processed_at=datetime.utcnow())
+            update_status(
+                db, record_id, ProcessingStatus.failed, processed_at=datetime.utcnow()
+            )
         return JSONResponse(
             status_code=500,
             content={"status": "error", "reason": "Failed to store file"}
         )
 
-    # Step 4 — transition to processing, run ML stub
+    # Step 4 — transition to processing, run ML stub, push to MinIO
     ml_result = None
+    minio_object = None
     try:
         if db and record_id:
             update_status(db, record_id, ProcessingStatus.processing)
 
         ml_result = run_ml(temp_path)
 
+        object_name = f"{uuid.uuid4().hex}.{ext}"
+        minio_object = upload_to_minio(temp_path, object_name)
+
         if db and record_id:
             update_status(
-                db, record_id, ProcessingStatus.processed, processed_at=datetime.utcnow()
+                db,
+                record_id,
+                ProcessingStatus.processed,
+                processed_at=datetime.utcnow(),
             )
+            row = db.query(MediaUpload).filter(MediaUpload.id == record_id).first()
+            if row:
+                row.drive_path = minio_object
+                db.commit()
 
-        logger.info("ML complete: id=%s file=%s result=%s", record_id, file.filename, ml_result)
+        logger.info(
+            "ML and MinIO complete: id=%s file=%s object=%s",
+            record_id, file.filename, minio_object,
+        )
 
     except Exception:
-        logger.exception("ML failed: id=%s file=%s", record_id, file.filename)
+        logger.exception("ML or MinIO failed: id=%s file=%s", record_id, file.filename)
         if db and record_id:
             update_status(
                 db, record_id, ProcessingStatus.failed, processed_at=datetime.utcnow()
@@ -161,11 +181,14 @@ async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db
             if db and record_id:
                 update_status(db, record_id, ProcessingStatus.deleted)
 
-    logger.info("Upload complete: id=%s file=%s size_mb=%f", record_id, file.filename, size_mb)
+    logger.info(
+        "Upload complete: id=%s file=%s size_mb=%f", record_id, file.filename, size_mb
+    )
     return {
         "status": "accepted",
         "id": record_id,
         "filename": file.filename,
         "size_mb": size_mb,
         "ml_result": ml_result,
-        }
+        "minio_object": minio_object,
+    }
