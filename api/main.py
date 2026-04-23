@@ -1,6 +1,5 @@
 
 import uuid
-import json
 import requests
 from datetime import datetime
 from fastapi import FastAPI, Response, status, UploadFile, File, Depends
