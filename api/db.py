@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.exc import SQLAlchemyError
-from .models import Base
+from .models import Base, ProcessingStatus
 
 load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -41,3 +41,30 @@ def check_db_connection():
             return True
     except SQLAlchemyError:
         return False
+
+def count_active_temp_files(db) -> int:
+    """
+    Count files currently in temp_stored or processing state.
+    Called inside a transaction with FOR UPDATE to prevent race conditions.
+    """
+    result = db.execute(
+        text("""
+            SELECT COUNT(*) FROM media_uploads
+            WHERE status IN ('temp_stored', 'processing')
+            FOR UPDATE
+        """)
+    )
+    return result.scalar()
+
+def update_status(db, record_id: int, new_status: ProcessingStatus, temp_path: str = None, processed_at=None):
+    """Single-place status transition. Always call this instead of mutating inline."""
+    from .models import MediaUpload
+    record = db.query(MediaUpload).filter(MediaUpload.id == record_id).with_for_update().first()
+    if not record:
+        return
+    record.status = new_status
+    if temp_path is not None:
+        record.temp_path = temp_path
+    if processed_at is not None:
+        record.processed_at = processed_at
+    db.commit()
