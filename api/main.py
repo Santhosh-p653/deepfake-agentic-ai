@@ -6,7 +6,9 @@ from sqlalchemy.orm import Session
 from .db import check_db_connection, get_db, init_db, count_active_temp_files, update_status
 from .models import MediaUpload, ProcessingStatus
 from .input_validator import validate_input
-from .temp_manager import ensure_temp_dir, write_to_temp, delete_from_temp, cleanup_on_startup, TEMP_FILE_CAP
+from .temp_manager import (
+    ensure_temp_dir, write_to_temp, delete_from_temp, cleanup_on_startup, TEMP_FILE_CAP
+)
 from .ml_stub import run_ml
 import logging
 
@@ -20,7 +22,6 @@ app = FastAPI()
 def on_startup():
     init_db()
     ensure_temp_dir()
-    # Run cleanup inside its own DB session — not a request session
     from .db import SessionLocal
     if SessionLocal:
         db = SessionLocal()
@@ -63,7 +64,10 @@ async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db
     valid, message = validate_input(file.filename, file_bytes)
     if not valid:
         logger.warning("Upload rejected: %s | file=%s", message, file.filename)
-        return JSONResponse(status_code=400, content={"status": "rejected", "reason": message})
+        return JSONResponse(
+            status_code=400,
+            content={"status": "rejected", "reason": message}
+        )
 
     size_mb = round(len(file_bytes) / (1024 * 1024), 4)
     ext = file.filename.rsplit(".", 1)[-1].lower()
@@ -78,17 +82,21 @@ async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db
             if active_count >= TEMP_FILE_CAP:
                 logger.warning(
                     "Upload rejected: temp cap reached | file=%s active=%d cap=%d",
-                    file.filename, active_count, TEMP_FILE_CAP
+                    file.filename,
+                    active_count,
+                    TEMP_FILE_CAP,
                 )
                 return JSONResponse(
                     status_code=429,
                     content={
                         "status": "rejected",
-                        "reason": f"Temp storage at capacity ({TEMP_FILE_CAP} files max). Try again shortly."
-                    }
+                        "reason": (
+                            f"Temp storage at capacity ({TEMP_FILE_CAP} files max). "
+                            "Try again shortly."
+                        ),
+                    },
                 )
 
-            # Insert row as pending before touching disk
             record = MediaUpload(
                 filename=file.filename,
                 file_type=ext,
@@ -102,9 +110,14 @@ async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db
 
         except Exception:
             logger.exception("DB error during upload cap check: file=%s", file.filename)
-            return JSONResponse(status_code=500, content={"status": "error", "reason": "Database error"})
+            return JSONResponse(
+                status_code=500,
+                content={"status": "error", "reason": "Database error"}
+            )
     else:
-        logger.warning("No DB session — proceeding without persistence: file=%s", file.filename)
+        logger.warning(
+            "No DB session — proceeding without persistence: file=%s", file.filename
+        )
 
     # Step 3 — write to temp folder
     try:
@@ -115,7 +128,10 @@ async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db
         logger.exception("Failed to write temp file: file=%s", file.filename)
         if db and record_id:
             update_status(db, record_id, ProcessingStatus.failed, processed_at=datetime.utcnow())
-        return JSONResponse(status_code=500, content={"status": "error", "reason": "Failed to store file"})
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "reason": "Failed to store file"}
+        )
 
     # Step 4 — transition to processing, run ML stub
     ml_result = None
@@ -126,17 +142,20 @@ async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db
         ml_result = run_ml(temp_path)
 
         if db and record_id:
-            update_status(db, record_id, ProcessingStatus.processed, processed_at=datetime.utcnow())
+            update_status(
+                db, record_id, ProcessingStatus.processed, processed_at=datetime.utcnow()
+            )
 
         logger.info("ML complete: id=%s file=%s result=%s", record_id, file.filename, ml_result)
 
     except Exception:
         logger.exception("ML failed: id=%s file=%s", record_id, file.filename)
         if db and record_id:
-            update_status(db, record_id, ProcessingStatus.failed, processed_at=datetime.utcnow())
+            update_status(
+                db, record_id, ProcessingStatus.failed, processed_at=datetime.utcnow()
+            )
 
     finally:
-        # Always clean up — success or failure
         if temp_path:
             delete_from_temp(temp_path)
             if db and record_id:
