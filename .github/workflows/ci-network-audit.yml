@@ -1,0 +1,142 @@
+name: CI — Network Audit & Logging Validation
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  network-audit-and-logging:
+    name: Network Audit & Log Validation
+    runs-on: ubuntu-latest
+
+    services:
+      db:
+        image: postgres:15
+        env:
+          POSTGRES_DB: deepfake_db
+          POSTGRES_USER: deepfake_user
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U deepfake_user"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          pip install requests uvicorn psycopg2-binary
+          [ -f api/requirements.txt ] && pip install -r api/requirements.txt || true
+
+      # ✅ Ensure DB is actually ready
+      - name: Wait for DB
+        run: |
+          until pg_isready -h localhost -p 5432 -U deepfake_user; do
+            echo "Waiting for Postgres..."
+            sleep 2
+          done
+          echo "Postgres ready"
+
+      # ✅ Start MinIO with readiness check
+      - name: Start MinIO
+        run: |
+          docker run -d \
+            --name minio \
+            -p 9000:9000 \
+            -e MINIO_ROOT_USER=minioadmin \
+            -e MINIO_ROOT_PASSWORD=minioadmin \
+            minio/minio server /data
+
+          until curl -s http://localhost:9000/minio/health/live; do
+            echo "Waiting for MinIO..."
+            sleep 2
+          done
+
+          echo "MinIO ready"
+
+      # ✅ Start API with logs + verification
+      - name: Start API
+        run: |
+          mkdir -p logs
+          uvicorn api.main:app --host 0.0.0.0 --port 8000 > logs/server.log 2>&1 &
+
+          # Wait until API is actually reachable
+          for i in {1..20}; do
+            if curl -s http://localhost:8000/ping > /dev/null; then
+              echo "API is up"
+              break
+            fi
+            echo "Waiting for API..."
+            sleep 2
+          done
+
+          # If still not up, print logs and fail
+          if ! curl -s http://localhost:8000/ping > /dev/null; then
+            echo "API failed to start. Logs:"
+            cat logs/server.log
+            exit 1
+          fi
+
+        env:
+          DATABASE_URL: postgresql+psycopg2://deepfake_user:${{ secrets.POSTGRES_PASSWORD }}@localhost:5432/deepfake_db
+          MINIO_ENDPOINT: localhost:9000
+          MINIO_ACCESS_KEY: minioadmin
+          MINIO_SECRET_KEY: minioadmin
+          MINIO_BUCKET: deepfakemedia
+          PYTHONPATH: .
+
+      # ✅ Debug logs (always useful)
+      - name: Show server logs
+        run: |
+          echo "==== SERVER LOGS ===="
+          cat logs/server.log || true
+
+      - name: Audit — ping
+        run: |
+          curl -f http://localhost:8000/ping
+          echo "Ping OK"
+
+      - name: Audit — health (DB connection)
+        run: |
+          curl -f http://localhost:8000/health
+          echo "Health OK"
+
+      - name: Audit — upload test file
+        run: |
+          echo "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" \
+            | base64 -d > /tmp/test.png
+
+          curl -f -X POST http://localhost:8000/upload \
+            -F "file=@/tmp/test.png"
+
+          echo "Upload OK"
+
+      - name: Audit — MinIO reachable
+        run: |
+          curl -f http://localhost:9000/minio/health/live
+          echo "MinIO OK"
+
+      # ✅ Log validation with safety check
+      - name: Validate logs
+        run: |
+          if [ ! -f logs/app.log ]; then
+            echo "Log file missing"
+            exit 1
+          fi
+
+          python api/validate_logs.py logs/app.log
+        env:
+          PYTHONPATH: .
