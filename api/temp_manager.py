@@ -1,9 +1,10 @@
+
 import os
 import uuid
-import logging
 from pathlib import Path
+from .logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 TEMP_DIR = Path("/app/tmp")
 TEMP_FILE_CAP = 2
@@ -13,7 +14,7 @@ def ensure_temp_dir():
     """Create /app/tmp at startup with correct permissions if it doesn't exist."""
     TEMP_DIR.mkdir(parents=True, exist_ok=True)
     os.chmod(TEMP_DIR, 0o700)
-    logger.info("Temp dir ready: path=%s", TEMP_DIR)
+    logger.info('{"message": "Temp dir ready", "path": "%s"}', TEMP_DIR)
 
 
 def write_to_temp(file_bytes: bytes, original_filename: str) -> str:
@@ -26,7 +27,11 @@ def write_to_temp(file_bytes: bytes, original_filename: str) -> str:
     dest = TEMP_DIR / unique_name
     with open(dest, "wb") as f:
         f.write(file_bytes)
-    logger.info("Write temp file: path=%s size_bytes=%d", dest, len(file_bytes))
+    logger.info(
+        '{"message": "Write temp file", "path": "%s", "size_bytes": %d}',
+        dest,
+        len(file_bytes),
+    )
     return str(dest)
 
 
@@ -37,24 +42,26 @@ def delete_from_temp(temp_path: str):
     path = Path(temp_path)
     if path.exists():
         path.unlink()
-        logger.info("Delete temp file: path=%s", temp_path)
+        logger.info('{"message": "Delete temp file", "path": "%s"}', temp_path)
     else:
-        logger.warning("Temp file already absent on delete: path=%s", temp_path)
+        logger.warning(
+            '{"message": "Temp file already absent on delete", "path": "%s"}',
+            temp_path,
+        )
 
 
 def cleanup_on_startup(db):
     """
     Startup recovery routine:
-    1. Delete any file in /app/tmp not referenced by an active DB row.
-    2. Reset any stuck 'processing' rows to 'failed' and delete their temp files.
-    3. Delete any orphaned files on disk with no DB row at all.
+    1. Reset stuck processing rows to failed and delete their temp files.
+    2. Delete orphaned files on disk with no active DB row.
     """
     from .models import MediaUpload, ProcessingStatus
     from .db import update_status
     from datetime import datetime
 
     if not db:
-        logger.warning("Startup cleanup skipped: no DB session")
+        logger.warning('{"message": "Startup cleanup skipped, no DB session"}')
         return
 
     # Reset stuck processing rows
@@ -65,7 +72,11 @@ def cleanup_on_startup(db):
         if row.temp_path:
             delete_from_temp(row.temp_path)
         update_status(db, row.id, ProcessingStatus.failed, processed_at=datetime.utcnow())
-        logger.info("Startup reset stuck row: id=%d filename=%s", row.id, row.filename)
+        logger.info(
+            '{"message": "Startup reset stuck row", "id": %d, "filename": "%s"}',
+            row.id,
+            row.filename,
+        )
 
     # Collect all temp_paths the DB knows about
     active_paths = set()
@@ -81,4 +92,8 @@ def cleanup_on_startup(db):
         for f in TEMP_DIR.iterdir():
             if str(f) not in active_paths:
                 f.unlink()
-                logger.info("Startup deleted orphan file: path=%s", f)
+                logger.info(
+                    '{"message": "Startup deleted orphan file", "path": "%s"}', f
+                )
+
+    logger.info('{"message": "Startup cleanup complete"}')
