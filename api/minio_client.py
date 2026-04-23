@@ -1,17 +1,18 @@
+
 import os
 import io
 from datetime import timedelta
 from minio import Minio
 from minio.lifecycleconfig import LifecycleConfig, Rule, Expiration
 from minio.commonconfig import Filter
-import logging
+from .logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "minio:9000")
 MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
 MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "minioadmin")
-MINIO_BUCKET = os.getenv("MINIO_BUCKET", "deepfake-media")
+MINIO_BUCKET = os.getenv("MINIO_BUCKET", "deepfakemedia")
 
 
 def get_minio_client() -> Minio:
@@ -28,9 +29,9 @@ def ensure_bucket():
     client = get_minio_client()
     if not client.bucket_exists(MINIO_BUCKET):
         client.make_bucket(MINIO_BUCKET)
-        logger.info("MinIO bucket created: bucket=%s", MINIO_BUCKET)
+        logger.info('{"message": "MinIO bucket created", "bucket": "%s"}', MINIO_BUCKET)
     else:
-        logger.info("MinIO bucket exists: bucket=%s", MINIO_BUCKET)
+        logger.info('{"message": "MinIO bucket exists", "bucket": "%s"}', MINIO_BUCKET)
 
     config = LifecycleConfig(
         [
@@ -44,7 +45,8 @@ def ensure_bucket():
     )
     client.set_bucket_lifecycle(MINIO_BUCKET, config)
     logger.info(
-        "MinIO lifecycle rule set: bucket=%s expiry_days=30", MINIO_BUCKET
+        '{"message": "MinIO lifecycle rule set", "bucket": "%s", "expiry_days": 30}',
+        MINIO_BUCKET,
     )
 
 
@@ -64,7 +66,9 @@ def upload_to_minio(temp_path: str, object_name: str) -> str:
         length=file_size,
     )
     logger.info(
-        "Upload to MinIO complete: object=%s size_bytes=%d", object_name, file_size
+        '{"message": "Upload to MinIO complete", "object": "%s", "size_bytes": %d}',
+        object_name,
+        file_size,
     )
     return object_name
 
@@ -81,7 +85,7 @@ def get_minio_url(object_name: str, expires_hours: int = 24) -> str:
         expires=timedelta(hours=expires_hours),
     )
     logger.info(
-        "Presigned URL generated: object=%s expires_hours=%d",
+        '{"message": "Presigned URL generated", "object": "%s", "expires_hours": %d}',
         object_name,
         expires_hours,
     )
