@@ -1,3 +1,4 @@
+
 import os
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
@@ -15,12 +16,14 @@ except Exception:
     engine = None
     SessionLocal = None
 
+
 def init_db():
     if engine:
         try:
             Base.metadata.create_all(bind=engine)
         except Exception:
             pass
+
 
 def get_db():
     if not SessionLocal:
@@ -32,6 +35,7 @@ def get_db():
     finally:
         db.close()
 
+
 def check_db_connection():
     if not engine:
         return False
@@ -42,24 +46,39 @@ def check_db_connection():
     except SQLAlchemyError:
         return False
 
+
 def count_active_temp_files(db) -> int:
     """
     Count files currently in temp_stored or processing state.
-    Called inside a transaction with FOR UPDATE to prevent race conditions.
+    Subquery locks rows first, then counts — avoids FOR UPDATE with aggregate error.
     """
     result = db.execute(
         text("""
-            SELECT COUNT(*) FROM media_uploads
-            WHERE status IN ('temp_stored', 'processing')
-            FOR UPDATE
+            SELECT COUNT(*) FROM (
+                SELECT id FROM media_uploads
+                WHERE status IN ('temp_stored', 'processing')
+                FOR UPDATE
+            ) AS locked_rows
         """)
     )
     return result.scalar()
 
-def update_status(db, record_id: int, new_status: ProcessingStatus, temp_path: str = None, processed_at=None):
+
+def update_status(
+    db,
+    record_id: int,
+    new_status: ProcessingStatus,
+    temp_path: str = None,
+    processed_at=None,
+):
     """Single-place status transition. Always call this instead of mutating inline."""
     from .models import MediaUpload
-    record = db.query(MediaUpload).filter(MediaUpload.id == record_id).with_for_update().first()
+    record = (
+        db.query(MediaUpload)
+        .filter(MediaUpload.id == record_id)
+        .with_for_update()
+        .first()
+    )
     if not record:
         return
     record.status = new_status
