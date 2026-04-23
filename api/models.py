@@ -7,9 +7,12 @@ Base = declarative_base()
 
 class ProcessingStatus(enum.Enum):
     pending = "pending"
+    temp_stored = "temp_stored"
     processing = "processing"
+    processed = "processed"
     completed = "completed"
     failed = "failed"
+    deleted = "deleted"
 
 class MediaUpload(Base):
     __tablename__ = "media_uploads"
@@ -22,4 +25,5 @@ class MediaUpload(Base):
     status = Column(Enum(ProcessingStatus), default=ProcessingStatus.pending, nullable=False)
     uploaded_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     processed_at = Column(DateTime, nullable=True)
+    temp_path = Column(String, nullable=True)
     drive_path = Column(String, nullable=True)
