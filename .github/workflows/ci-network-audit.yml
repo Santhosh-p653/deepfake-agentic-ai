@@ -1,3 +1,4 @@
+
 name: CI — Network Audit & Logging Validation
 
 on:
@@ -36,6 +37,11 @@ jobs:
           python-version: "3.11"
           cache: "pip"
 
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libmagic1
+
       - name: Install dependencies
         run: |
           pip install requests uvicorn
@@ -55,9 +61,10 @@ jobs:
       - name: Start API
         run: |
           mkdir -p logs
-          uvicorn api.main:app --host 0.0.0.0 --port 8000 &
+          uvicorn api.main:app --host 0.0.0.0 --port 8000 > /tmp/uvicorn.log 2>&1 &
           sleep 8
-          echo "API started"
+          echo "--- uvicorn log ---"
+          cat /tmp/uvicorn.log
         env:
           DATABASE_URL: postgresql+psycopg2://deepfake_user:${{ secrets.POSTGRES_PASSWORD }}@localhost:5432/deepfake_db
           MINIO_ENDPOINT: localhost:9000
