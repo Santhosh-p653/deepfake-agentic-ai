@@ -1,4 +1,3 @@
-
 import os
 import uuid
 from pathlib import Path
@@ -6,27 +5,40 @@ from .logger import get_logger
 
 logger = get_logger(__name__)
 
-TEMP_DIR = Path("/app/tmp")
+# ✅ Environment-safe temp directory
+TEMP_DIR = Path(os.getenv("TEMP_DIR", "/tmp/deepfake"))
 TEMP_FILE_CAP = 2
 
 
 def ensure_temp_dir():
-    """Create /app/tmp at startup with correct permissions if it doesn't exist."""
+    """Create temp directory at startup with correct permissions."""
     TEMP_DIR.mkdir(parents=True, exist_ok=True)
-    os.chmod(TEMP_DIR, 0o700)
-    logger.info('{"message": "Temp dir ready", "path": "%s"}', TEMP_DIR)
+
+    try:
+        os.chmod(TEMP_DIR, 0o700)
+    except PermissionError:
+        # Not critical in CI or restricted environments
+        logger.warning(
+            '{"message": "chmod failed on temp dir", "path": "%s"}', TEMP_DIR
+        )
+
+    logger.info(
+        '{"message": "Temp dir ready", "path": "%s"}', TEMP_DIR
+    )
 
 
 def write_to_temp(file_bytes: bytes, original_filename: str) -> str:
     """
-    Write file bytes to /app/tmp with a UUID-prefixed filename.
+    Write file bytes to temp dir with a UUID-prefixed filename.
     Returns the full path as a string.
     """
     ext = original_filename.rsplit(".", 1)[-1].lower()
     unique_name = f"{uuid.uuid4().hex}.{ext}"
     dest = TEMP_DIR / unique_name
+
     with open(dest, "wb") as f:
         f.write(file_bytes)
+
     logger.info(
         '{"message": "Write temp file", "path": "%s", "size_bytes": %d}',
         dest,
@@ -37,12 +49,15 @@ def write_to_temp(file_bytes: bytes, original_filename: str) -> str:
 
 def delete_from_temp(temp_path: str):
     """
-    Delete a file from /app/tmp. Safe to call even if file no longer exists.
+    Delete a file from temp dir. Safe if file doesn't exist.
     """
     path = Path(temp_path)
+
     if path.exists():
         path.unlink()
-        logger.info('{"message": "Delete temp file", "path": "%s"}', temp_path)
+        logger.info(
+            '{"message": "Delete temp file", "path": "%s"}', temp_path
+        )
     else:
         logger.warning(
             '{"message": "Temp file already absent on delete", "path": "%s"}',
@@ -68,10 +83,18 @@ def cleanup_on_startup(db):
     stuck = db.query(MediaUpload).filter(
         MediaUpload.status == ProcessingStatus.processing
     ).all()
+
     for row in stuck:
         if row.temp_path:
             delete_from_temp(row.temp_path)
-        update_status(db, row.id, ProcessingStatus.failed, processed_at=datetime.utcnow())
+
+        update_status(
+            db,
+            row.id,
+            ProcessingStatus.failed,
+            processed_at=datetime.utcnow(),
+        )
+
         logger.info(
             '{"message": "Startup reset stuck row", "id": %d, "filename": "%s"}',
             row.id,
@@ -83,6 +106,7 @@ def cleanup_on_startup(db):
     active_rows = db.query(MediaUpload).filter(
         MediaUpload.status == ProcessingStatus.temp_stored
     ).all()
+
     for row in active_rows:
         if row.temp_path:
             active_paths.add(row.temp_path)
