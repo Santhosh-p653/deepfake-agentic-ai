@@ -1,3 +1,4 @@
+
 import sys
 import json
 
@@ -19,7 +20,7 @@ def validate(log_path: str):
 
     try:
         with open(log_path, "r") as f:
-            lines = [l.strip() for l in f.readlines() if l.strip()]
+            lines = [ln.strip() for ln in f.readlines() if ln.strip()]
     except FileNotFoundError:
         print(f"ERROR: Log file not found: {log_path}")
         sys.exit(1)
@@ -29,26 +30,22 @@ def validate(log_path: str):
         sys.exit(1)
 
     for i, line in enumerate(lines, 1):
-        # Check every line is valid JSON
         try:
             entry = json.loads(line)
         except json.JSONDecodeError as e:
             errors.append(f"Line {i}: invalid JSON — {e}\n  Content: {line[:120]}")
             continue
 
-        # Check required fields exist
         missing = REQUIRED_FIELDS - entry.keys()
         if missing:
             errors.append(f"Line {i}: missing fields {missing} — {line[:120]}")
             continue
 
-        # Track which required events have been logged
         msg = entry.get("message", "")
         for event in REQUIRED_EVENTS:
             if event in msg:
                 events_found.add(event)
 
-    # Check all required events were logged
     missing_events = set(REQUIRED_EVENTS) - events_found
     if missing_events:
         for event in missing_events:
@@ -56,12 +53,14 @@ def validate(log_path: str):
 
     if errors:
         print(f"Log validation FAILED — {len(errors)} error(s):")
-        for e in errors:
-            print(f"  - {e}")
+        for err in errors:
+            print(f"  - {err}")
         sys.exit(1)
 
-    print(f"Log validation PASSED — {len(lines)} lines checked, "
-          f"all {len(REQUIRED_EVENTS)} required events found.")
+    print(
+        f"Log validation PASSED — {len(lines)} lines checked, "
+        f"all {len(REQUIRED_EVENTS)} required events found."
+    )
 
 
 if __name__ == "__main__":
