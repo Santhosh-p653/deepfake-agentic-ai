@@ -8,6 +8,8 @@ services:
     env_file: [".env"]
     depends_on: ["db", "minio"]
     networks: ["bridge_network"]
+    volumes:
+      - ./logs:/app/logs
 
   agents:
     build: {context: ".", dockerfile: "Dockerfile.agents"}
@@ -40,9 +42,24 @@ services:
     volumes: ["minio_data:/data"]
     networks: ["bridge_network"]
 
+  dozzle:
+    image: amir20/dozzle:latest
+    ports: ["8080:8080"]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks: ["bridge_network"]
+
+  beszel:
+    image: henrygd/beszel:latest
+    ports: ["8090:8090"]
+    volumes:
+      - beszel_data:/beszel_data
+    networks: ["bridge_network"]
+
 volumes:
   postgres_data: {}
   minio_data: {}
+  beszel_data: {}
 
 networks:
   bridge_network:
