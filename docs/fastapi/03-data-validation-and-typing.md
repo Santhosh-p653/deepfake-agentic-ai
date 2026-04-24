@@ -1,6 +1,6 @@
-Data Validation and Type System in FastAPI
+# Data Validation and Type System in FastAPI
 
-1. Introduction
+## 1. Introduction
 
 In modern API systems, data validation is a critical component that ensures correctness, security, and reliability. FastAPI adopts a type-driven development approach, leveraging Python type hints and Pydantic to enforce structured data contracts between clients and the backend.
 
@@ -8,7 +8,7 @@ This approach transforms APIs from loosely defined interfaces into strongly-type
 
 ---
 
-2. Problem Definition
+## 2. Problem Definition
 
 Traditional APIs often rely on:
 
@@ -30,7 +30,7 @@ In intelligent systems (e.g., LLMs, deepfake pipelines), incorrect input structu
 
 ---
 
-3. Core Concept: Type-Driven Validation
+##3. Core Concept: Type-Driven Validation
 
 FastAPI uses:
 
@@ -43,7 +43,7 @@ This creates a system where:
 
 ---
 
-4. Pydantic Model Definition
+##4. Pydantic Model Definition
 
 from pydantic import BaseModel
 
@@ -60,7 +60,7 @@ Key Properties:
 
 ---
 
-5. Validation Flow in FastAPI
+## 5. Validation Flow in FastAPI
 
 flowchart LR
     A[Client JSON Input]
@@ -75,7 +75,7 @@ Figure: Validation pipeline using Pydantic models.
 
 ---
 
-6. Request Body Validation
+## 6. Request Body Validation
 
 Example:
 
@@ -98,7 +98,7 @@ Behavior:
 
 ---
 
-7. Error Handling
+## 7. Error Handling
 
 FastAPI automatically generates structured error responses:
 
@@ -118,7 +118,7 @@ Validation errors occur before business logic execution, ensuring system safety.
 
 ---
 
-8. Advanced Typing Features
+## 8. Advanced Typing Features
 
 FastAPI supports advanced type constructs:
 
@@ -141,7 +141,7 @@ class Input(BaseModel):
 
 ---
 
-9. Response Models
+## 9. Response Models
 
 FastAPI also enforces output structure:
 
@@ -160,7 +160,7 @@ Benefits:
 
 ---
 
-10. System Perspective
+## 10. System Perspective
 
 Validation acts as a gatekeeper layer:
 
@@ -180,7 +180,7 @@ Role:
 
 ---
 
-11. Relevance to Intelligent Systems
+## 11. Relevance to Intelligent Systems
 
 In your context (agentic systems, deepfake detection, LLMs):
 
@@ -198,7 +198,7 @@ Example:
 
 ---
 
-12. Trade-offs and Limitations
+## 12. Trade-offs and Limitations
 
 Advantages:
 
@@ -214,7 +214,7 @@ Limitations:
 
 ---
 
-13. Key Takeaways
+## 13. Key Takeaways
 
 - FastAPI uses type-driven validation via Pydantic
 - Validation occurs before execution, ensuring safety
@@ -223,6 +223,6 @@ Limitations:
 
 ---
 
-14. Next
+## 14. Next
 
 → Dependency Injection and Modular Design in FastAPI
