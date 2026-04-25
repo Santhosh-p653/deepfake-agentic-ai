@@ -8,11 +8,11 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import OperationalError
 
-from .db import check_db_connection, get_db, init_db, count_active_temp_files, update_status
+from .db import check_db_connection, get_db, init_db, update_status
 from .models import MediaUpload, ProcessingStatus
 from .input_validator import validate_input
 from .temp_manager import (
-    ensure_temp_dir, write_to_temp, delete_from_temp, cleanup_on_startup, TEMP_FILE_CAP
+    ensure_temp_dir, write_to_temp, delete_from_temp, cleanup_on_startup
 )
 from .ml_stub import run_ml
 from .minio_client import ensure_bucket, upload_to_minio
@@ -47,9 +47,7 @@ def init_db_with_retry(max_retries=10, delay=3):
 
 @app.on_event("startup")
 def on_startup():
-    # 🔁 retry until DB is ready
     init_db_with_retry()
-
     ensure_temp_dir()
     ensure_bucket()
 
@@ -192,9 +190,7 @@ async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db
         processed_at=datetime.utcnow(),
     )
 
-    delete_from_temp(temp_path)
-
-    # Step 5 — trigger agents (unchanged for now)
+    # Step 5 — trigger agents FIRST
     def _run_agents():
         try:
             requests.post(
@@ -206,6 +202,9 @@ async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db
             logger.exception('{"message": "Failed to trigger agents pipeline"}')
 
     threading.Thread(target=_run_agents, daemon=True).start()
+
+    # ✅ NOW safe to delete temp file
+    delete_from_temp(temp_path)
 
     logger.info(
         '{"message": "Upload pipeline complete", "id": %s, "filename": "%s"}',
