@@ -1,5 +1,4 @@
-requests
-flask
+fastapi
+uvicorn
+openai
 python-dotenv
-chromadb
-langgraph
