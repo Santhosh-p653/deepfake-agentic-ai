@@ -4,4 +4,4 @@ COPY ml/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY ml ./ml
 COPY shared/ ./shared/
-CMD ["python", "ml/inference.py"]
+CMD ["python", "ml/main.py"]
