@@ -1,11 +1,13 @@
-
 import uuid
 import threading
+import time
 import requests
 from datetime import datetime
 from fastapi import FastAPI, Response, status, UploadFile, File, Depends
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import OperationalError
+
 from .db import check_db_connection, get_db, init_db, count_active_temp_files, update_status
 from .models import MediaUpload, ProcessingStatus
 from .input_validator import validate_input
@@ -21,11 +23,36 @@ logger = get_logger(__name__)
 app = FastAPI()
 
 
+# ✅ DB RETRY LOGIC
+def init_db_with_retry(max_retries=10, delay=3):
+    for attempt in range(1, max_retries + 1):
+        try:
+            init_db()
+            logger.info(
+                '{"message": "DB initialized successfully", "attempt": %d}',
+                attempt
+            )
+            return
+        except OperationalError:
+            logger.warning(
+                '{"message": "DB not ready, retrying", "attempt": %d, "max": %d}',
+                attempt,
+                max_retries
+            )
+            time.sleep(delay)
+
+    logger.exception('{"message": "DB init failed after retries"}')
+    raise RuntimeError("Database initialization failed")
+
+
 @app.on_event("startup")
 def on_startup():
-    init_db()
+    # 🔁 retry until DB is ready
+    init_db_with_retry()
+
     ensure_temp_dir()
     ensure_bucket()
+
     from .db import SessionLocal
     if SessionLocal:
         db = SessionLocal()
@@ -33,6 +60,7 @@ def on_startup():
             cleanup_on_startup(db)
         finally:
             db.close()
+
     logger.info('{"message": "Application startup complete"}')
 
 
@@ -124,169 +152,67 @@ async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db
     logger.info('{"message": "Upload request received", "filename": "%s"}', file.filename)
     file_bytes = await file.read()
 
-    # Step 1 — validate format and encoding
+    # Step 1 — validate
     valid, message = validate_input(file.filename, file_bytes)
     if not valid:
         logger.warning(
-            '{"message": "Upload rejected at validation", "filename": "%s", "reason": "%s"}',
+            '{"message": "Upload rejected", "filename": "%s", "reason": "%s"}',
             file.filename,
             message,
         )
-        return JSONResponse(
-            status_code=400,
-            content={"status": "rejected", "reason": message}
-        )
+        return JSONResponse(status_code=400, content={"status": "rejected", "reason": message})
 
     size_mb = round(len(file_bytes) / (1024 * 1024), 4)
     ext = file.filename.rsplit(".", 1)[-1].lower()
 
-    # Step 2 — cap check + DB insert (atomic)
-    record_id = None
-    temp_path = None
+    # Step 2 — DB insert
+    record = MediaUpload(
+        filename=file.filename,
+        file_type=ext,
+        size_mb=size_mb,
+        status=ProcessingStatus.pending,
+    )
+    db.add(record)
+    db.commit()
+    db.refresh(record)
+    record_id = record.id
 
-    if db:
+    # Step 3 — temp write
+    temp_path = write_to_temp(file_bytes, file.filename)
+
+    # Step 4 — ML + MinIO
+    ml_result = run_ml(temp_path)
+    object_name = f"{uuid.uuid4().hex}.{ext}"
+    minio_object = upload_to_minio(temp_path, object_name)
+
+    update_status(
+        db,
+        record_id,
+        ProcessingStatus.processed,
+        processed_at=datetime.utcnow(),
+    )
+
+    delete_from_temp(temp_path)
+
+    # Step 5 — trigger agents (unchanged for now)
+    def _run_agents():
         try:
-            active_count = count_active_temp_files(db)
-            if active_count >= TEMP_FILE_CAP:
-                logger.warning(
-                    '{"message": "Upload rejected, temp cap reached",'
-                    ' "filename": "%s", "active": %d, "cap": %d}',
-                    file.filename,
-                    active_count,
-                    TEMP_FILE_CAP,
-                )
-                return JSONResponse(
-                    status_code=429,
-                    content={
-                        "status": "rejected",
-                        "reason": (
-                            f"Temp storage at capacity ({TEMP_FILE_CAP} files max). "
-                            "Try again shortly."
-                        ),
-                    },
-                )
-
-            record = MediaUpload(
-                filename=file.filename,
-                file_type=ext,
-                size_mb=size_mb,
-                status=ProcessingStatus.pending,
+            requests.post(
+                "http://agents:8123/run",
+                json={"record_id": record_id, "file_path": temp_path},
+                timeout=120,
             )
-            db.add(record)
-            db.commit()
-            db.refresh(record)
-            record_id = record.id
-            logger.info(
-                '{"message": "DB record created", "id": %d, "filename": "%s"}',
-                record_id,
-                file.filename,
-            )
-
         except Exception:
-            logger.exception(
-                '{"message": "DB error during cap check", "filename": "%s"}',
-                file.filename,
-            )
-            return JSONResponse(
-                status_code=500,
-                content={"status": "error", "reason": "Database error"}
-            )
-    else:
-        logger.warning(
-            '{"message": "No DB session, proceeding without persistence",'
-            ' "filename": "%s"}',
-            file.filename,
-        )
+            logger.exception('{"message": "Failed to trigger agents pipeline"}')
 
-    # Step 3 — write to temp folder
-    try:
-        temp_path = write_to_temp(file_bytes, file.filename)
-        if db and record_id:
-            update_status(db, record_id, ProcessingStatus.temp_stored, temp_path=temp_path)
-    except Exception:
-        logger.exception(
-            '{"message": "Failed to write temp file", "filename": "%s"}',
-            file.filename,
-        )
-        if db and record_id:
-            update_status(
-                db, record_id, ProcessingStatus.failed, processed_at=datetime.utcnow()
-            )
-        return JSONResponse(
-            status_code=500,
-            content={"status": "error", "reason": "Failed to store file"}
-        )
-
-    # Step 4 — transition to processing, run ML stub, push to MinIO
-    ml_result = None
-    minio_object = None
-    try:
-        if db and record_id:
-            update_status(db, record_id, ProcessingStatus.processing)
-
-        ml_result = run_ml(temp_path)
-
-        object_name = f"{uuid.uuid4().hex}.{ext}"
-        minio_object = upload_to_minio(temp_path, object_name)
-
-        if db and record_id:
-            update_status(
-                db,
-                record_id,
-                ProcessingStatus.processed,
-                processed_at=datetime.utcnow(),
-            )
-            row = db.query(MediaUpload).filter(MediaUpload.id == record_id).first()
-            if row:
-                row.drive_path = minio_object
-                db.commit()
-
-        logger.info(
-            '{"message": "ML and MinIO complete", "id": %s, "filename": "%s",'
-            ' "object": "%s"}',
-            record_id,
-            file.filename,
-            minio_object,
-        )
-
-    except Exception:
-        logger.exception(
-            '{"message": "ML or MinIO failed", "id": %s, "filename": "%s"}',
-            record_id,
-            file.filename,
-        )
-        if db and record_id:
-            update_status(
-                db, record_id, ProcessingStatus.failed, processed_at=datetime.utcnow()
-            )
-
-    finally:
-        if temp_path:
-            delete_from_temp(temp_path)
-            if db and record_id:
-                update_status(db, record_id, ProcessingStatus.deleted)
-
-    # Step 5 — trigger agents pipeline async
-    if record_id and minio_object:
-        def _run_agents():
-            try:
-                requests.post(
-                    "http://agents:8123/run",
-                    json={"record_id": record_id, "file_path": temp_path},
-                    timeout=120,
-                )
-            except Exception:
-                logger.exception('{"message": "Failed to trigger agents pipeline"}')
-
-        threading.Thread(target=_run_agents, daemon=True).start()
+    threading.Thread(target=_run_agents, daemon=True).start()
 
     logger.info(
-        '{"message": "Upload pipeline complete", "id": %s, "filename": "%s",'
-        ' "size_mb": %f}',
+        '{"message": "Upload pipeline complete", "id": %s, "filename": "%s"}',
         record_id,
         file.filename,
-        size_mb,
     )
+
     return {
         "status": "accepted",
         "id": record_id,
