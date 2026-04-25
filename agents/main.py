@@ -1,9 +1,9 @@
 import requests
 from fastapi import FastAPI
-from log_analyser import analyse_logs
-from ml_client import call_ml
-from aggregator import aggregate
-from decider import decide
+from .log_analyser import analyse_logs
+from .ml_client import call_ml
+from .aggregator import aggregate
+from .decider import decide
 from shared.signal import Signal
 
 API_URL = "http://api:8000"
