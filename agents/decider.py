@@ -1,4 +1,3 @@
-from shared.signal import Signal
 
 FAKE_THRESHOLD = 0.7
 REAL_THRESHOLD = 0.3
