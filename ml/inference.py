@@ -1,1 +1,3 @@
-print("ML Service loaded ")
+from ml.preprocessing import preprocess
+
+print("ML Service loaded")
