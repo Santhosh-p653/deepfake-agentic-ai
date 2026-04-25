@@ -4,4 +4,4 @@ COPY agents/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY agents ./agents
 COPY shared/ ./shared/
-CMD ["python","agents/app.py"]
+CMD ["uvicorn", "agents.main:app", "--host", "0.0.0.0", "--port", "8123"]
