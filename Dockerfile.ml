@@ -4,4 +4,4 @@ COPY ml/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY ml ./ml
 COPY shared/ ./shared/
-CMD ["python", "ml/main.py"]
+CMD ["uvicorn", "ml.main:app", "--host", "0.0.0.0", "--port", "8001"]
