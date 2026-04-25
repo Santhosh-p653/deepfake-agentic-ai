@@ -27,3 +27,5 @@ class MediaUpload(Base):
     processed_at = Column(DateTime, nullable=True)
     temp_path = Column(String, nullable=True)
     drive_path = Column(String, nullable=True)
+    verdict = Column(String, nullable=True)
+    verdict_score = Column(Float, nullable=True)
