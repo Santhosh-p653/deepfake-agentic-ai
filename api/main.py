@@ -175,13 +175,39 @@ async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db
     db.refresh(record)
     record_id = record.id
 
+    # ✅ REQUIRED LOG
+    logger.info(
+        '{"message": "DB record created", "id": %d, "filename": "%s"}',
+        record_id,
+        file.filename,
+    )
+
     # Step 3 — temp write
     temp_path = write_to_temp(file_bytes, file.filename)
 
-    # Step 4 — ML + MinIO
+    # ✅ REQUIRED LOG
+    logger.info(
+        '{"message": "Write temp file", "path": "%s"}',
+        temp_path,
+    )
+
+    # Step 4 — ML
+    # ✅ REQUIRED LOG
+    logger.info(
+        '{"message": "ML stub invoked", "path": "%s"}',
+        temp_path,
+    )
+
     ml_result = run_ml(temp_path)
+
     object_name = f"{uuid.uuid4().hex}.{ext}"
     minio_object = upload_to_minio(temp_path, object_name)
+
+    # ✅ REQUIRED LOG
+    logger.info(
+        '{"message": "Upload to MinIO complete", "object": "%s"}',
+        minio_object,
+    )
 
     update_status(
         db,
@@ -190,7 +216,7 @@ async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db
         processed_at=datetime.utcnow(),
     )
 
-    # Step 5 — trigger agents FIRST
+    # Step 5 — trigger agents
     def _run_agents():
         try:
             requests.post(
@@ -203,9 +229,9 @@ async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db
 
     threading.Thread(target=_run_agents, daemon=True).start()
 
-    # ✅ NOW safe to delete temp file
     delete_from_temp(temp_path)
 
+    # ✅ REQUIRED LOG
     logger.info(
         '{"message": "Upload pipeline complete", "id": %s, "filename": "%s"}',
         record_id,
