@@ -23,7 +23,6 @@ logger = get_logger(__name__)
 app = FastAPI()
 
 
-# ✅ DB RETRY LOGIC
 def init_db_with_retry(max_retries=10, delay=3):
     for attempt in range(1, max_retries + 1):
         try:
@@ -175,7 +174,6 @@ async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db
     db.refresh(record)
     record_id = record.id
 
-    # ✅ REQUIRED LOG
     logger.info(
         '{"message": "DB record created", "id": %d, "filename": "%s"}',
         record_id,
@@ -184,30 +182,15 @@ async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db
 
     # Step 3 — temp write
     temp_path = write_to_temp(file_bytes, file.filename)
+    logger.info('{"message": "Write temp file", "path": "%s"}', temp_path)
 
-    # ✅ REQUIRED LOG
-    logger.info(
-        '{"message": "Write temp file", "path": "%s"}',
-        temp_path,
-    )
-
-    # Step 4 — ML
-    # ✅ REQUIRED LOG
-    logger.info(
-        '{"message": "ML stub invoked", "path": "%s"}',
-        temp_path,
-    )
-
+    # Step 4 — ML stub + MinIO
+    logger.info('{"message": "ML stub invoked", "path": "%s"}', temp_path)
     ml_result = run_ml(temp_path)
 
     object_name = f"{uuid.uuid4().hex}.{ext}"
     minio_object = upload_to_minio(temp_path, object_name)
-
-    # ✅ REQUIRED LOG
-    logger.info(
-        '{"message": "Upload to MinIO complete", "object": "%s"}',
-        minio_object,
-    )
+    logger.info('{"message": "Upload to MinIO complete", "object": "%s"}', minio_object)
 
     update_status(
         db,
@@ -216,12 +199,14 @@ async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db
         processed_at=datetime.utcnow(),
     )
 
-    # Step 5 — trigger agents
+    # Step 5 — delete temp then trigger agents with minio_object
+    delete_from_temp(temp_path)
+
     def _run_agents():
         try:
             requests.post(
                 "http://agents:8123/run",
-                json={"record_id": record_id, "file_path": temp_path},
+                json={"record_id": record_id, "minio_object": minio_object},
                 timeout=120,
             )
         except Exception:
@@ -229,9 +214,6 @@ async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db
 
     threading.Thread(target=_run_agents, daemon=True).start()
 
-    delete_from_temp(temp_path)
-
-    # ✅ REQUIRED LOG
     logger.info(
         '{"message": "Upload pipeline complete", "id": %s, "filename": "%s"}',
         record_id,
