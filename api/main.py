@@ -1,5 +1,6 @@
 
 import uuid
+import threading
 import requests
 from datetime import datetime
 from fastapi import FastAPI, Response, status, UploadFile, File, Depends
@@ -46,11 +47,17 @@ async def health(response: Response):
     return {"status": "error", "database": "disconnected"}
 
 
+@app.get("/ping")
+def ping():
+    logger.info('{"message": "Ping received"}')
+    return {"message": "pong"}
+
+
 @app.get("/run-agents")
 async def run_agents():
     logger.info('{"message": "Run agents request received"}')
     try:
-        response = requests.get("http://agents:8123/run", timeout=10)
+        response = requests.get("http://agents:8123/ping", timeout=10)
         logger.info('{"message": "Agents responded", "status_code": %d}', response.status_code)
         return response.json()
     except Exception:
@@ -58,10 +65,27 @@ async def run_agents():
         return {"error": "Failed to run agents"}
 
 
-@app.get("/ping")
-def ping():
-    logger.info('{"message": "Ping received"}')
-    return {"message": "pong"}
+@app.post("/verdict")
+def receive_verdict(payload: dict, db: Session = Depends(get_db)):
+    record_id = payload.get("record_id")
+    verdict = payload.get("verdict")
+    verdict_score = payload.get("verdict_score")
+
+    if db and record_id:
+        row = db.query(MediaUpload).filter(MediaUpload.id == record_id).first()
+        if row:
+            row.verdict = verdict
+            row.verdict_score = verdict_score
+            row.status = ProcessingStatus.completed
+            db.commit()
+
+    logger.info(
+        '{"message": "Verdict received", "id": %s, "verdict": "%s", "score": %s}',
+        record_id,
+        verdict,
+        verdict_score,
+    )
+    return {"status": "ok"}
 
 
 @app.post("/upload")
@@ -210,6 +234,20 @@ async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db
             delete_from_temp(temp_path)
             if db and record_id:
                 update_status(db, record_id, ProcessingStatus.deleted)
+
+    # Step 5 — trigger agents pipeline async
+    if record_id and minio_object:
+        def _run_agents():
+            try:
+                requests.post(
+                    "http://agents:8123/run",
+                    json={"record_id": record_id, "file_path": temp_path},
+                    timeout=120,
+                )
+            except Exception:
+                logger.exception('{"message": "Failed to trigger agents pipeline"}')
+
+        threading.Thread(target=_run_agents, daemon=True).start()
 
     logger.info(
         '{"message": "Upload pipeline complete", "id": %s, "filename": "%s",'
