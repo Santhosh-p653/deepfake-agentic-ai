@@ -88,6 +88,37 @@ def receive_verdict(payload: dict, db: Session = Depends(get_db)):
     return {"status": "ok"}
 
 
+@app.get("/result/{record_id}")
+def get_result(record_id: int, db: Session = Depends(get_db)):
+    if not db:
+        return JSONResponse(
+            status_code=503,
+            content={"status": "error", "reason": "Database unavailable"}
+        )
+
+    row = db.query(MediaUpload).filter(MediaUpload.id == record_id).first()
+    if not row:
+        return JSONResponse(
+            status_code=404,
+            content={"status": "error", "reason": "Record not found"}
+        )
+
+    logger.info(
+        '{"message": "Result fetched", "id": %d, "status": "%s"}',
+        record_id,
+        row.status.value,
+    )
+    return {
+        "id": row.id,
+        "filename": row.filename,
+        "status": row.status.value,
+        "verdict": row.verdict,
+        "verdict_score": row.verdict_score,
+        "uploaded_at": row.uploaded_at.isoformat() if row.uploaded_at else None,
+        "processed_at": row.processed_at.isoformat() if row.processed_at else None,
+    }
+
+
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db)):
     logger.info('{"message": "Upload request received", "filename": "%s"}', file.filename)
