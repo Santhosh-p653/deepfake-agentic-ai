@@ -80,7 +80,7 @@ confidence: how confident you are in this analysis, 0.0 to 1.0.
 """
 
     response = client.chat.completions.create(
-        model="Meta-Llama-3.1-8B-Instruct",
+        model="Meta-Llama-3.1-8B-Instruct-v2",
         messages=[{"role": "user", "content": prompt}],
         max_tokens=512,
         temperature=0.1,
