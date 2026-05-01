@@ -3,13 +3,43 @@ import numpy as np
 from pathlib import Path
 from shared.signal import Signal
 
-FRAME_SAMPLE_RATE = 10        # extract every Nth frame for video
-MIN_QUALITY_SCORE = 0.3       # below this, reliability tanks
-TARGET_SIZE = (224, 224)      # Xception input size
+FRAME_SAMPLE_RATE = 10
+MIN_QUALITY_SCORE = 0.3
+TARGET_SIZE = (224, 224)
+
+# ── Security: all files must live under this directory ──────────────────────
+UPLOADS_ROOT = Path("/app/uploads").resolve()
+ALLOWED_SUFFIXES = {".jpg", ".jpeg", ".png", ".mp4"}
+
+
+def _safe_resolve(file_path: str) -> Path:
+    """
+    Resolve the path and enforce it stays inside UPLOADS_ROOT.
+    Raises ValueError (no internal detail) if anything looks wrong.
+    """
+    try:
+        # resolve() collapses ../.. and follows symlinks
+        resolved = Path(file_path).resolve()
+    except (TypeError, ValueError):
+        raise ValueError("Invalid file path.")
+
+    # Symlink escape check — re-check the real path after resolution
+    if not str(resolved).startswith(str(UPLOADS_ROOT)):
+        raise ValueError("File not found.")          # don't say why
+
+    # Must actually exist and be a regular file (no devices, sockets, etc.)
+    if not resolved.is_file():
+        raise ValueError("File not found.")
+
+    # Suffix whitelist enforced here, before any I/O
+    if resolved.suffix.lower() not in ALLOWED_SUFFIXES:
+        raise ValueError("Unsupported file type.")
+
+    return resolved
 
 
 def preprocess(file_path: str) -> Signal:
-    path = Path(file_path)
+    path = _safe_resolve(file_path)          # raises safely if bad
     suffix = path.suffix.lower()
 
     if suffix in (".jpg", ".jpeg", ".png"):
@@ -17,7 +47,8 @@ def preprocess(file_path: str) -> Signal:
     elif suffix == ".mp4":
         data, quality, extra = _process_video(path)
     else:
-        raise ValueError(f"Unsupported file type: {suffix}")
+        # Unreachable after _safe_resolve, but keeps type-checker happy
+        raise ValueError("Unsupported file type.")
 
     reliability = _compute_reliability(quality, extra)
 
@@ -26,7 +57,7 @@ def preprocess(file_path: str) -> Signal:
         reliability=reliability,
         module="ml.preprocessing",
         metadata={
-            "file": path.name,
+            "file": path.name,           # filename only, never full path
             "type": suffix,
             "frames": len(data),
             "quality_score": quality,
@@ -38,13 +69,13 @@ def preprocess(file_path: str) -> Signal:
 def _process_image(path: Path):
     img = cv2.imread(str(path))
     if img is None:
-        raise ValueError(f"Could not read image: {path}")
+        raise ValueError("Could not read file.")     # no path in message
     frame = _normalise(img)
     quality = _compute_quality(img)
     extra = {
         "pixel_distribution": _check_pixel_distribution(img),
         "compression_artifact_score": _check_compression_artifacts(img),
-        "aspect_ratio_consistent": True,   # single frame, always consistent
+        "aspect_ratio_consistent": True,
     }
     return [frame], quality, extra
 
@@ -52,12 +83,9 @@ def _process_image(path: Path):
 def _process_video(path: Path):
     cap = cv2.VideoCapture(str(path))
     if not cap.isOpened():
-        raise ValueError(f"Could not open video: {path}")
+        raise ValueError("Could not read file.")     # no path in message
 
-    frames = []
-    qualities = []
-    pixel_scores = []
-    compression_scores = []
+    frames, qualities, pixel_scores, compression_scores = [], [], [], []
     aspect_ratios = set()
     idx = 0
 
@@ -77,7 +105,7 @@ def _process_video(path: Path):
     cap.release()
 
     if not frames:
-        raise ValueError("No frames extracted from video")
+        raise ValueError("No frames could be extracted.")
 
     extra = {
         "pixel_distribution": float(np.mean(pixel_scores)),
@@ -121,6 +149,13 @@ def _check_compression_artifacts(frame: np.ndarray) -> float:
     Returns 0.0 (heavily compressed) to 1.0 (clean).
     """
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY).astype(np.float32)
+
+    # cv2.dct() requires even dimensions — pad raw frames safely
+    h, w = gray.shape
+    new_h = h if h % 2 == 0 else h - 1
+    new_w = w if w % 2 == 0 else w - 1
+    gray = gray[:new_h, :new_w]
+
     dct = cv2.dct(gray)
     high_freq_energy = np.abs(dct[16:, 16:]).mean()
     total_energy = np.abs(dct).mean() + 1e-6
@@ -139,13 +174,11 @@ def _compute_reliability(quality: float, extra: dict) -> float:
     base = 0.5 + (quality * 0.5)           # 0.65 – 1.0 from sharpness
 
     # pixel distribution penalty — unnatural clustering
-    pixel_score = extra.get("pixel_distribution", 1.0)
-    if pixel_score < 0.4:
+    if extra.get("pixel_distribution", 1.0) < 0.4:
         base -= 0.15
 
     # compression penalty — heavy artifacts hurt detection
-    compression_score = extra.get("compression_artifact_score", 1.0)
-    if compression_score < 0.3:
+    if extra.get("compression_artifact_score", 1.0) < 0.3:
         base -= 0.15
 
     # aspect ratio inconsistency — edited/stitched video
