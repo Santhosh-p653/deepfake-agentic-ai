@@ -30,7 +30,9 @@ def process(payload: dict):
     minio_object = payload.get("minio_object")
     record_id = payload.get("record_id")
 
-    ext = minio_object.rsplit(".", 1)[-1]
+    ext = str(minio_object).rsplit(".", 1)[-1].lower()
+    if not (1 <= len(ext) <= 10 and ext.isalnum()):
+        ext = "bin"
     with tempfile.NamedTemporaryFile(suffix=f".{ext}", delete=False) as tmp:
         tmp_path = tmp.name
 
