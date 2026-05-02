@@ -2,36 +2,30 @@ import cv2
 import numpy as np
 from pathlib import Path
 from shared.signal import Signal
+from shared.logger import get_logger
+
+logger = get_logger("ml.preprocessing")
 
 FRAME_SAMPLE_RATE = 10
 MIN_QUALITY_SCORE = 0.3
 TARGET_SIZE = (224, 224)
 
-# ── Security: all files must live under this directory ──────────────────────
 UPLOADS_ROOT = Path("/app/uploads").resolve()
 ALLOWED_SUFFIXES = {".jpg", ".jpeg", ".png", ".mp4"}
 
 
 def _safe_resolve(file_path: str) -> Path:
-    """
-    Resolve the path and enforce it stays inside UPLOADS_ROOT.
-    Raises ValueError (no internal detail) if anything looks wrong.
-    """
     try:
-        # resolve() collapses ../.. and follows symlinks
         resolved = Path(file_path).resolve()
     except (TypeError, ValueError):
         raise ValueError("Invalid file path.")
 
-    # Symlink escape check — re-check the real path after resolution
     if not str(resolved).startswith(str(UPLOADS_ROOT)):
-        raise ValueError("File not found.")          # don't say why
+        raise ValueError("File not found.")
 
-    # Must actually exist and be a regular file (no devices, sockets, etc.)
     if not resolved.is_file():
         raise ValueError("File not found.")
 
-    # Suffix whitelist enforced here, before any I/O
     if resolved.suffix.lower() not in ALLOWED_SUFFIXES:
         raise ValueError("Unsupported file type.")
 
@@ -39,25 +33,40 @@ def _safe_resolve(file_path: str) -> Path:
 
 
 def preprocess(file_path: str) -> Signal:
-    path = _safe_resolve(file_path)          # raises safely if bad
+    logger.info(f"Preprocessing invoked — file={Path(file_path).name}", extra={"status": "called"})
+
+    try:
+        path = _safe_resolve(file_path)
+    except ValueError as e:
+        logger.error(f"Path validation failed — {e}", extra={"status": "error"})
+        raise
+
     suffix = path.suffix.lower()
 
-    if suffix in (".jpg", ".jpeg", ".png"):
-        data, quality, extra = _process_image(path)
-    elif suffix == ".mp4":
-        data, quality, extra = _process_video(path)
-    else:
-        # Unreachable after _safe_resolve, but keeps type-checker happy
-        raise ValueError("Unsupported file type.")
+    try:
+        if suffix in (".jpg", ".jpeg", ".png"):
+            data, quality, extra = _process_image(path)
+        elif suffix == ".mp4":
+            data, quality, extra = _process_video(path)
+        else:
+            raise ValueError("Unsupported file type.")
+    except ValueError as e:
+        logger.error(f"Preprocessing failed — {e}", extra={"status": "error"})
+        raise
 
     reliability = _compute_reliability(quality, extra)
+
+    logger.info(
+        f"Preprocessing complete — frames={len(data)} quality={round(quality, 4)} reliability={reliability}",
+        extra={"status": "success"}
+    )
 
     return Signal(
         score=quality,
         reliability=reliability,
         module="ml.preprocessing",
         metadata={
-            "file": path.name,           # filename only, never full path
+            "file": path.name,
             "type": suffix,
             "frames": len(data),
             "quality_score": quality,
@@ -69,7 +78,7 @@ def preprocess(file_path: str) -> Signal:
 def _process_image(path: Path):
     img = cv2.imread(str(path))
     if img is None:
-        raise ValueError("Could not read file.")     # no path in message
+        raise ValueError("Could not read file.")
     frame = _normalise(img)
     quality = _compute_quality(img)
     extra = {
@@ -83,7 +92,7 @@ def _process_image(path: Path):
 def _process_video(path: Path):
     cap = cv2.VideoCapture(str(path))
     if not cap.isOpened():
-        raise ValueError("Could not read file.")     # no path in message
+        raise ValueError("Could not read file.")
 
     frames, qualities, pixel_scores, compression_scores = [], [], [], []
     aspect_ratios = set()
@@ -128,34 +137,19 @@ def _compute_quality(frame: np.ndarray) -> float:
 
 
 def _check_pixel_distribution(frame: np.ndarray) -> float:
-    """
-    Measures how naturally spread pixel values are.
-    Synthetically generated or tampered media often has
-    unnaturally narrow/clustered pixel distributions.
-    Returns 0.0 (suspicious) to 1.0 (natural).
-    """
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     hist = cv2.calcHist([gray], [0], None, [256], [0, 256])
     hist = hist.flatten() / hist.sum()
     non_zero = np.count_nonzero(hist)
-    return float(min(non_zero / 200.0, 1.0))   # 200+ active bins = natural
+    return float(min(non_zero / 200.0, 1.0))
 
 
 def _check_compression_artifacts(frame: np.ndarray) -> float:
-    """
-    Estimates compression damage via DCT block artifact detection.
-    Heavy compression destroys subtle facial artifacts that
-    RetinaFace and Xception rely on.
-    Returns 0.0 (heavily compressed) to 1.0 (clean).
-    """
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY).astype(np.float32)
-
-    # cv2.dct() requires even dimensions — pad raw frames safely
     h, w = gray.shape
     new_h = h if h % 2 == 0 else h - 1
     new_w = w if w % 2 == 0 else w - 1
     gray = gray[:new_h, :new_w]
-
     dct = cv2.dct(gray)
     high_freq_energy = np.abs(dct[16:, 16:]).mean()
     total_energy = np.abs(dct).mean() + 1e-6
@@ -164,24 +158,17 @@ def _check_compression_artifacts(frame: np.ndarray) -> float:
 
 
 def _compute_reliability(quality: float, extra: dict) -> float:
-    """
-    Aggregates all quality dimensions into a single reliability score.
-    Each dimension penalises reliability independently.
-    """
     if quality < MIN_QUALITY_SCORE:
         return 0.2
 
-    base = 0.5 + (quality * 0.5)           # 0.65 – 1.0 from sharpness
+    base = 0.5 + (quality * 0.5)
 
-    # pixel distribution penalty — unnatural clustering
     if extra.get("pixel_distribution", 1.0) < 0.4:
         base -= 0.15
 
-    # compression penalty — heavy artifacts hurt detection
     if extra.get("compression_artifact_score", 1.0) < 0.3:
         base -= 0.15
 
-    # aspect ratio inconsistency — edited/stitched video
     if not extra.get("aspect_ratio_consistent", True):
         base -= 0.2
 
