@@ -1,3 +1,4 @@
+
 import json
 import os
 from openai import OpenAI
@@ -67,7 +68,9 @@ Respond ONLY in JSON with this exact structure, no preamble, no markdown:
 {{
   "summary": "one sentence summary of log health",
   "anomalies": ["list of specific anomalies found, empty if none"],
-  "missing_modules": ["list of modules expected but not seen in logs"],
+  "missing_modules": [
+    "list of modules expected but not seen in logs"
+  ],
   "anomaly_score": 0.0,
   "confidence": 0.0
 }}
@@ -100,7 +103,10 @@ confidence: how confident you are in this analysis, 0.0 to 1.0.
     try:
         return json.loads(raw)
     except json.JSONDecodeError:
-        logger.warning("LLM response could not be parsed as JSON", extra={"status": "error"})
+        logger.warning(
+            "LLM response could not be parsed as JSON",
+            extra={"status": "error"}
+        )
         return {
             "summary": "LLM response could not be parsed",
             "anomalies": [],
