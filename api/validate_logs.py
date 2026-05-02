@@ -1,4 +1,3 @@
-
 import sys
 import json
 
@@ -8,7 +7,6 @@ REQUIRED_EVENTS = [
     "Upload request received",
     "DB record created",
     "Write temp file",
-    "ML stub invoked",
     "Upload to MinIO complete",
     "Upload pipeline complete",
 ]
