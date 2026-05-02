@@ -11,7 +11,6 @@ from shared.logger import get_logger
 
 logger = get_logger("ml.main")
 
-# ── MinIO configuration ─────────────────────────────────────────────
 MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "minio:9000")
 MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
 MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "minioadmin")
@@ -54,19 +53,22 @@ def process(payload: dict):
     tmp_path = str(UPLOADS_ROOT / filename)
 
     try:
-        logger.info(f"Downloading from MinIO — object={minio_object}", extra={"status": "called"})
+        logger.info(
+            f"Downloading from MinIO — object={minio_object}",
+            extra={"status": "called"}
+        )
         minio_client.fget_object(MINIO_BUCKET, minio_object, tmp_path)
         logger.info("MinIO download complete", extra={"status": "success"})
 
         logger.info("Preprocessing invoked", extra={"status": "called"})
-        preprocessing_signal = preprocess(tmp_path)
+        frames, preprocessing_signal = preprocess(tmp_path)
         logger.info(
             f"Preprocessing complete — quality={preprocessing_signal.score}",
             extra={"status": "success"}
         )
 
         logger.info("Detection invoked", extra={"status": "called"})
-        detection_signal = detect(preprocessing_signal.metadata.get("frames", []))
+        detection_signal = detect(frames)  # numpy arrays stay inside ML service
         logger.info(
             f"Detection complete — score={detection_signal.score}",
             extra={"status": "success"}
