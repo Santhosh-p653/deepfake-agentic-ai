@@ -16,7 +16,7 @@ from .temp_manager import (
 )
 from .ml_stub import run_ml
 from .minio_client import ensure_bucket, upload_to_minio
-from .logger import get_logger
+from shared.logger import get_logger
 
 logger = get_logger("api.main")
 
