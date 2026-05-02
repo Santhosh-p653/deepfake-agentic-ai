@@ -137,3 +137,8 @@ jobs:
           python api/validate_logs.py logs/app.log
         env:
           PYTHONPATH: .
+
+      - name: Validate response schemas
+        run: python api/validate_schema.py
+        env:
+          PYTHONPATH: .
