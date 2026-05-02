@@ -58,8 +58,11 @@ def _call_llm(logs: list[dict]) -> dict:
 
     prompt = f"""
 You are a log analyser for a deepfake detection system.
-Analyse the following filtered structured JSON logs (WARNING/ERROR levels and module checkpoints only).
-Identify anomalies, missing module invocations, or suspicious patterns.
+
+Analyse the following filtered structured JSON logs 
+(WARNING/ERROR levels and module checkpoints only).
+Identify anomalies, missing module invocations, 
+or suspicious patterns.
 
 Logs:
 {log_text}
