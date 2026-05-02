@@ -34,10 +34,6 @@ def _safe_resolve(file_path: str) -> Path:
 
 
 def _extract_source_metadata(path: Path) -> dict:
-    """
-    Extracts forensic metadata for source verification.
-    Runs before any CV processing — operates on raw bytes only.
-    """
     file_bytes = path.read_bytes()
     file_hash = hashlib.sha256(file_bytes).hexdigest()
     file_size = len(file_bytes)
@@ -73,7 +69,12 @@ def _extract_source_metadata(path: Path) -> dict:
     }
 
 
-def preprocess(file_path: str) -> Signal:
+def preprocess(file_path: str) -> tuple[list[np.ndarray], Signal]:
+    """
+    Returns (frames, Signal).
+    frames — list of normalised numpy arrays, never serialized.
+    Signal — JSON-safe, sent over HTTP to agents.
+    """
     logger.info(
         f"Preprocessing invoked — file={Path(file_path).name}",
         extra={"status": "called"}
@@ -93,9 +94,9 @@ def preprocess(file_path: str) -> Signal:
 
     try:
         if suffix in (".jpg", ".jpeg", ".png"):
-            data, quality, extra = _process_image(path)
+            frames, quality, extra = _process_image(path)
         elif suffix == ".mp4":
-            data, quality, extra = _process_video(path)
+            frames, quality, extra = _process_video(path)
         else:
             raise ValueError("Unsupported file type.")
     except ValueError as e:
@@ -105,24 +106,26 @@ def preprocess(file_path: str) -> Signal:
     reliability = _compute_reliability(quality, extra)
 
     logger.info(
-        f"Preprocessing complete — frames={len(data)} "
+        f"Preprocessing complete — frames={len(frames)} "
         f"quality={round(quality, 4)} reliability={reliability}",
         extra={"status": "success"}
     )
 
-    return Signal(
+    signal = Signal(
         score=quality,
         reliability=reliability,
         module="ml.preprocessing",
         metadata={
             "file": path.name,
             "type": suffix,
-            "frames": len(data),
+            "frame_count": len(frames),  # count only — arrays never serialized
             "quality_score": quality,
             "source": source_meta,
             **extra,
         },
     )
+
+    return frames, signal
 
 
 def _process_image(path: Path):
