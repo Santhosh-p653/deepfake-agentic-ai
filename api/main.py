@@ -1,3 +1,4 @@
+
 import uuid
 import threading
 import time
@@ -15,7 +16,6 @@ from .input_validator import validate_input
 from .temp_manager import (
     ensure_temp_dir, write_to_temp, delete_from_temp, cleanup_on_startup
 )
-from .ml_stub import run_ml
 from .minio_client import ensure_bucket, upload_to_minio
 from .logger import get_logger
 
@@ -184,11 +184,7 @@ async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db
     temp_path = write_to_temp(file_bytes, file.filename)
     logger.info(f"Temp file written — path={temp_path}", extra={"status": "success"})
 
-    # Step 4 — ML stub + MinIO
-    logger.info("ML stub invoked", extra={"status": "called"})
-    run_ml(temp_path)
-    logger.info("ML stub complete", extra={"status": "success"})
-
+    # Step 4 — MinIO upload (ML handled by agents pipeline)
     object_name = f"{uuid.uuid4().hex}.{ext}"
     minio_object = upload_to_minio(temp_path, object_name)
     logger.info(
