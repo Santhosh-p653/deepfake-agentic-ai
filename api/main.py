@@ -16,9 +16,9 @@ from .temp_manager import (
 )
 from .ml_stub import run_ml
 from .minio_client import ensure_bucket, upload_to_minio
-from .logger import get_logger
+from shared.logger import get_logger
 
-logger = get_logger(__name__)
+logger = get_logger("api.main")
 
 app = FastAPI()
 
@@ -27,20 +27,16 @@ def init_db_with_retry(max_retries=10, delay=3):
     for attempt in range(1, max_retries + 1):
         try:
             init_db()
-            logger.info(
-                '{"message": "DB initialized successfully", "attempt": %d}',
-                attempt
-            )
+            logger.info("DB initialized successfully", extra={"status": "success"})
             return
         except OperationalError:
             logger.warning(
-                '{"message": "DB not ready, retrying", "attempt": %d, "max": %d}',
-                attempt,
-                max_retries
+                f"DB not ready, retrying ({attempt}/{max_retries})",
+                extra={"status": "error"}
             )
             time.sleep(delay)
 
-    logger.exception('{"message": "DB init failed after retries"}')
+    logger.exception("DB init failed after retries", extra={"status": "error"})
     raise RuntimeError("Database initialization failed")
 
 
@@ -58,35 +54,38 @@ def on_startup():
         finally:
             db.close()
 
-    logger.info('{"message": "Application startup complete"}')
+    logger.info("Application startup complete", extra={"status": "success"})
 
 
 @app.get("/health")
 async def health(response: Response):
     db_status = check_db_connection()
     if db_status:
-        logger.info('{"message": "Health check passed", "database": "connected"}')
+        logger.info("Health check passed", extra={"status": "success"})
         return {"status": "ok", "database": "connected"}
-    logger.warning('{"message": "Health check failed", "database": "disconnected"}')
+    logger.warning("Health check failed — database disconnected", extra={"status": "error"})
     response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     return {"status": "error", "database": "disconnected"}
 
 
 @app.get("/ping")
 def ping():
-    logger.info('{"message": "Ping received"}')
+    logger.info("Ping received", extra={"status": "success"})
     return {"message": "pong"}
 
 
 @app.get("/run-agents")
 async def run_agents():
-    logger.info('{"message": "Run agents request received"}')
+    logger.info("Run agents request received", extra={"status": "called"})
     try:
         response = requests.get("http://agents:8123/ping", timeout=10)
-        logger.info('{"message": "Agents responded", "status_code": %d}', response.status_code)
+        logger.info(
+            f"Agents responded with {response.status_code}",
+            extra={"status": "success"}
+        )
         return response.json()
     except Exception:
-        logger.exception('{"message": "Failed to reach agents service"}')
+        logger.exception("Failed to reach agents service", extra={"status": "error"})
         return {"error": "Failed to run agents"}
 
 
@@ -105,10 +104,8 @@ def receive_verdict(payload: dict, db: Session = Depends(get_db)):
             db.commit()
 
     logger.info(
-        '{"message": "Verdict received", "id": %s, "verdict": "%s", "score": %s}',
-        record_id,
-        verdict,
-        verdict_score,
+        f"Verdict received — id={record_id} verdict={verdict} score={verdict_score}",
+        extra={"status": "success"}
     )
     return {"status": "ok"}
 
@@ -129,9 +126,8 @@ def get_result(record_id: int, db: Session = Depends(get_db)):
         )
 
     logger.info(
-        '{"message": "Result fetched", "id": %d, "status": "%s"}',
-        record_id,
-        row.status.value,
+        f"Result fetched — id={record_id} status={row.status.value}",
+        extra={"status": "success"}
     )
     return {
         "id": row.id,
@@ -146,16 +142,18 @@ def get_result(record_id: int, db: Session = Depends(get_db)):
 
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db)):
-    logger.info('{"message": "Upload request received", "filename": "%s"}', file.filename)
+    logger.info(
+        f"Upload request received — filename={file.filename}",
+        extra={"status": "called"}
+    )
     file_bytes = await file.read()
 
     # Step 1 — validate
     valid, message = validate_input(file.filename, file_bytes)
     if not valid:
         logger.warning(
-            '{"message": "Upload rejected", "filename": "%s", "reason": "%s"}',
-            file.filename,
-            message,
+            f"Upload rejected — filename={file.filename} reason={message}",
+            extra={"status": "error"}
         )
         return JSONResponse(status_code=400, content={"status": "rejected", "reason": message})
 
@@ -175,22 +173,25 @@ async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db
     record_id = record.id
 
     logger.info(
-        '{"message": "DB record created", "id": %d, "filename": "%s"}',
-        record_id,
-        file.filename,
+        f"DB record created — id={record_id} filename={file.filename}",
+        extra={"status": "success"}
     )
 
     # Step 3 — temp write
     temp_path = write_to_temp(file_bytes, file.filename)
-    logger.info('{"message": "Write temp file", "path": "%s"}', temp_path)
+    logger.info(f"Temp file written — path={temp_path}", extra={"status": "success"})
 
     # Step 4 — ML stub + MinIO
-    logger.info('{"message": "ML stub invoked", "path": "%s"}', temp_path)
+    logger.info("ML stub invoked", extra={"status": "called"})
     ml_result = run_ml(temp_path)
+    logger.info("ML stub complete", extra={"status": "success"})
 
     object_name = f"{uuid.uuid4().hex}.{ext}"
     minio_object = upload_to_minio(temp_path, object_name)
-    logger.info('{"message": "Upload to MinIO complete", "object": "%s"}', minio_object)
+    logger.info(
+        f"MinIO upload complete — object={minio_object}",
+        extra={"status": "success"}
+    )
 
     update_status(
         db,
@@ -199,25 +200,26 @@ async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db
         processed_at=datetime.utcnow(),
     )
 
-    # Step 5 — delete temp then trigger agents with minio_object
+    # Step 5 — delete temp then trigger agents
     delete_from_temp(temp_path)
 
     def _run_agents():
         try:
+            logger.info("Triggering agents pipeline", extra={"status": "called"})
             requests.post(
                 "http://agents:8123/run",
                 json={"record_id": record_id, "minio_object": minio_object},
                 timeout=120,
             )
+            logger.info("Agents pipeline triggered", extra={"status": "success"})
         except Exception:
-            logger.exception('{"message": "Failed to trigger agents pipeline"}')
+            logger.exception("Failed to trigger agents pipeline", extra={"status": "error"})
 
     threading.Thread(target=_run_agents, daemon=True).start()
 
     logger.info(
-        '{"message": "Upload pipeline complete", "id": %s, "filename": "%s"}',
-        record_id,
-        file.filename,
+        f"Upload pipeline complete — id={record_id} filename={file.filename}",
+        extra={"status": "success"}
     )
 
     return {
