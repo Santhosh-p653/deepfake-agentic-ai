@@ -1,3 +1,4 @@
+
 name: CI — Network Audit & Logging Validation
 
 on:
@@ -41,7 +42,6 @@ jobs:
           pip install requests uvicorn psycopg2-binary
           [ -f api/requirements.txt ] && pip install -r api/requirements.txt || true
 
-      # ✅ Wait for Postgres readiness
       - name: Wait for DB
         run: |
           until pg_isready -h localhost -p 5432 -U deepfake_user; do
@@ -50,7 +50,6 @@ jobs:
           done
           echo "Postgres ready"
 
-      # ✅ Start MinIO and wait until healthy
       - name: Start MinIO
         run: |
           docker run -d \
@@ -67,14 +66,12 @@ jobs:
 
           echo "MinIO ready"
 
-      # ✅ Start API with robust readiness check
       - name: Start API
         run: |
           mkdir -p logs
 
           uvicorn api.main:app --host 0.0.0.0 --port 8000 > logs/server.log 2>&1 &
 
-          # Wait until API responds
           for i in {1..25}; do
             if curl -s http://localhost:8000/ping > /dev/null; then
               echo "API is up"
@@ -84,7 +81,6 @@ jobs:
             sleep 2
           done
 
-          # Fail if API never came up
           if ! curl -s http://localhost:8000/ping > /dev/null; then
             echo "API failed to start. Logs:"
             cat logs/server.log
@@ -98,9 +94,9 @@ jobs:
           MINIO_SECRET_KEY: minioadmin
           MINIO_BUCKET: deepfakemedia
           TEMP_DIR: /tmp/deepfake
+          LOG_DIR: logs
           PYTHONPATH: .
 
-      # ✅ Always print logs for visibility
       - name: Show server logs
         run: |
           echo "==== SERVER LOGS ===="
@@ -131,7 +127,6 @@ jobs:
           curl -f http://localhost:9000/minio/health/live
           echo "MinIO OK"
 
-      # ✅ Validate logs safely
       - name: Validate logs
         run: |
           if [ ! -f logs/app.log ]; then
