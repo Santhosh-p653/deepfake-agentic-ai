@@ -1,19 +1,15 @@
-from typing import Union, List
+from typing import List
+import numpy as np
 from shared.signal import Signal
 from shared.logger import get_logger
 
 logger = get_logger("ml.detection")
 
 
-def detect(frames: Union[int, List]) -> Signal:
+def detect(frames: List[np.ndarray]) -> Signal:
     logger.info("Detection invoked", extra={"status": "called"})
 
-    if isinstance(frames, int):
-        frames_count = frames
-    elif isinstance(frames, list):
-        frames_count = len(frames)
-    else:
-        frames_count = 0
+    frames_count = len(frames) if isinstance(frames, list) else 0
 
     logger.warning(
         f"Detection running as stub — frames={frames_count}",
@@ -27,7 +23,6 @@ def detect(frames: Union[int, List]) -> Signal:
         metadata={
             "stub": True,
             "frames_received": frames_count,
-            "input_type": type(frames).__name__,
             "note": "static stub — real models not yet implemented",
         },
     )
