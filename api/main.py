@@ -10,13 +10,14 @@ from sqlalchemy.exc import OperationalError
 
 from .db import check_db_connection, get_db, init_db, update_status
 from .models import MediaUpload, ProcessingStatus
+from .schemas import UploadResponse, ResultResponse, VerdictPayload, HealthResponse
 from .input_validator import validate_input
 from .temp_manager import (
     ensure_temp_dir, write_to_temp, delete_from_temp, cleanup_on_startup
 )
 from .ml_stub import run_ml
 from .minio_client import ensure_bucket, upload_to_minio
-from shared.logger import get_logger
+from .logger import get_logger
 
 logger = get_logger("api.main")
 
@@ -57,15 +58,15 @@ def on_startup():
     logger.info("Application startup complete", extra={"status": "success"})
 
 
-@app.get("/health")
+@app.get("/health", response_model=HealthResponse)
 async def health(response: Response):
     db_status = check_db_connection()
     if db_status:
         logger.info("Health check passed", extra={"status": "success"})
-        return {"status": "ok", "database": "connected"}
+        return HealthResponse(status="ok", database="connected")
     logger.warning("Health check failed — database disconnected", extra={"status": "error"})
     response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
-    return {"status": "error", "database": "disconnected"}
+    return HealthResponse(status="error", database="disconnected")
 
 
 @app.get("/ping")
@@ -90,27 +91,26 @@ async def run_agents():
 
 
 @app.post("/verdict")
-def receive_verdict(payload: dict, db: Session = Depends(get_db)):
-    record_id = payload.get("record_id")
-    verdict = payload.get("verdict")
-    verdict_score = payload.get("verdict_score")
-
-    if db and record_id:
-        row = db.query(MediaUpload).filter(MediaUpload.id == record_id).first()
+def receive_verdict(payload: VerdictPayload, db: Session = Depends(get_db)):
+    if db:
+        row = db.query(MediaUpload).filter(
+            MediaUpload.id == payload.record_id
+        ).first()
         if row:
-            row.verdict = verdict
-            row.verdict_score = verdict_score
+            row.verdict = payload.verdict
+            row.verdict_score = payload.verdict_score
             row.status = ProcessingStatus.completed
             db.commit()
 
     logger.info(
-        f"Verdict received — id={record_id} verdict={verdict} score={verdict_score}",
+        f"Verdict received — id={payload.record_id} "
+        f"verdict={payload.verdict} score={payload.verdict_score}",
         extra={"status": "success"}
     )
     return {"status": "ok"}
 
 
-@app.get("/result/{record_id}")
+@app.get("/result/{record_id}", response_model=ResultResponse)
 def get_result(record_id: int, db: Session = Depends(get_db)):
     if not db:
         return JSONResponse(
@@ -129,18 +129,21 @@ def get_result(record_id: int, db: Session = Depends(get_db)):
         f"Result fetched — id={record_id} status={row.status.value}",
         extra={"status": "success"}
     )
-    return {
-        "id": row.id,
-        "filename": row.filename,
-        "status": row.status.value,
-        "verdict": row.verdict,
-        "verdict_score": row.verdict_score,
-        "uploaded_at": row.uploaded_at.isoformat() if row.uploaded_at else None,
-        "processed_at": row.processed_at.isoformat() if row.processed_at else None,
-    }
+
+    return ResultResponse(
+        id=row.id,
+        filename=row.filename,
+        file_type=row.file_type,
+        size_mb=row.size_mb,
+        status=row.status.value,
+        verdict=row.verdict,
+        verdict_score=row.verdict_score,
+        uploaded_at=row.uploaded_at.isoformat() if row.uploaded_at else None,
+        processed_at=row.processed_at.isoformat() if row.processed_at else None,
+    )
 
 
-@app.post("/upload")
+@app.post("/upload", response_model=UploadResponse)
 async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db)):
     logger.info(
         f"Upload request received — filename={file.filename}",
@@ -183,7 +186,7 @@ async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db
 
     # Step 4 — ML stub + MinIO
     logger.info("ML stub invoked", extra={"status": "called"})
-    ml_result = run_ml(temp_path)
+    run_ml(temp_path)
     logger.info("ML stub complete", extra={"status": "success"})
 
     object_name = f"{uuid.uuid4().hex}.{ext}"
@@ -222,11 +225,10 @@ async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db
         extra={"status": "success"}
     )
 
-    return {
-        "status": "accepted",
-        "id": record_id,
-        "filename": file.filename,
-        "size_mb": size_mb,
-        "ml_result": ml_result,
-        "minio_object": minio_object,
-    }
+    return UploadResponse(
+        status="accepted",
+        id=record_id,
+        filename=file.filename,
+        size_mb=size_mb,
+        minio_object=minio_object,
+    )
