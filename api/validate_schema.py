@@ -3,7 +3,6 @@ Schema validation for CI — verifies API responses match locked schemas.
 Run after the API is live: python api/validate_schema.py
 """
 import sys
-import json
 import requests
 
 BASE = "http://localhost:8000"
