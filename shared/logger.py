@@ -4,7 +4,6 @@ import json
 from datetime import datetime, timezone
 
 LOG_DIR = os.getenv("LOG_DIR", "/app/logs")
-os.makedirs(LOG_DIR, exist_ok=True)
 
 
 class JSONFormatter(logging.Formatter):
@@ -30,12 +29,15 @@ def get_logger(name: str) -> logging.Logger:
 
     stream_handler = logging.StreamHandler()
     stream_handler.setFormatter(JSONFormatter())
-
-    file_handler = logging.FileHandler(os.path.join(LOG_DIR, "app.log"))
-    file_handler.setFormatter(JSONFormatter())
-
     logger.addHandler(stream_handler)
-    logger.addHandler(file_handler)
-    logger.propagate = False
 
+    try:
+        os.makedirs(LOG_DIR, exist_ok=True)
+        file_handler = logging.FileHandler(os.path.join(LOG_DIR, "app.log"))
+        file_handler.setFormatter(JSONFormatter())
+        logger.addHandler(file_handler)
+    except OSError:
+        pass  # CI/test env without /app — stdout only
+
+    logger.propagate = False
     return logger
