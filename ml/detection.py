@@ -1,25 +1,24 @@
 from typing import Union, List
 from shared.signal import Signal
+from shared.logger import get_logger
+
+logger = get_logger("ml.detection")
 
 
 def detect(frames: Union[int, List]) -> Signal:
-    """
-    Flexible stub:
-    Accepts either:
-      - int  → frame count
-      - list → actual frames
+    logger.info("Detection invoked", extra={"status": "called"})
 
-    This avoids pipeline breakage and keeps compatibility
-    for future ML model integration.
-    """
-
-    # Determine frame count safely
     if isinstance(frames, int):
         frames_count = frames
     elif isinstance(frames, list):
         frames_count = len(frames)
     else:
-        frames_count = 0  # fallback safety
+        frames_count = 0
+
+    logger.warning(
+        f"Detection running as stub — frames={frames_count}",
+        extra={"status": "success"}
+    )
 
     return Signal(
         score=0.5,
