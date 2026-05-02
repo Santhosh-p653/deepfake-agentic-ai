@@ -4,6 +4,7 @@ from agents.log_analyser import analyse_logs
 from agents.ml_client import call_ml
 from agents.aggregator import aggregate
 from agents.decider import decide
+from agents.source_verifier import verify
 from shared.signal import Signal
 from shared.logger import get_logger
 
@@ -46,14 +47,19 @@ def run(payload: dict):
     preprocessing = Signal(**ml_result["preprocessing"])
     detection = Signal(**ml_result["detection"])
 
+    # Source verification — reads from preprocessing metadata
+    logger.info("Source verifier invoked", extra={"status": "called"})
+    source_signal = verify(preprocessing)
+    logger.info("Source verifier complete", extra={"status": "success"})
+
     # Analyse logs
     logger.info("Log analyser invoked", extra={"status": "called"})
     log_signal = analyse_logs()
     logger.info("Log analyser complete", extra={"status": "success"})
 
-    # Aggregate signals
+    # Aggregate all four signals
     logger.info("Aggregator invoked", extra={"status": "called"})
-    aggregated = aggregate(preprocessing, detection, log_signal)
+    aggregated = aggregate(preprocessing, detection, log_signal, source_signal)
     logger.info(
         f"Aggregation complete — score={aggregated['aggregated_score']}",
         extra={"status": "success"}
@@ -92,4 +98,5 @@ def run(payload: dict):
         "record_id": record_id,
         "aggregated": aggregated,
         "decision": decision,
+        "source_flags": source_signal.metadata.get("flags", []),
     }
