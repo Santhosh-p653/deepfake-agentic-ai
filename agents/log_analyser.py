@@ -56,31 +56,23 @@ def analyse_logs() -> Signal:
 def _call_llm(logs: list[dict]) -> dict:
     log_text = json.dumps(logs, indent=2)
 
-    prompt = f"""
-You are a log analyser for a deepfake detection system.
-
-Analyse the following filtered structured JSON logs 
-(WARNING/ERROR levels and module checkpoints only).
-Identify anomalies, missing module invocations, 
-or suspicious patterns.
-
-Logs:
-{log_text}
-
-Respond ONLY in JSON with this exact structure, no preamble, no markdown:
-{{
-  "summary": "one sentence summary of log health",
-  "anomalies": ["list of specific anomalies found, empty if none"],
-  "missing_modules": [
-    "list of modules expected but not seen in logs"
-  ],
-  "anomaly_score": 0.0,
-  "confidence": 0.0
-}}
-
-anomaly_score: 0.0 means clean, 1.0 means highly suspicious.
-confidence: how confident you are in this analysis, 0.0 to 1.0.
-"""
+    prompt = (
+        "You are a log analyser for a deepfake detection system.\n"
+        "Analyse the following filtered structured JSON logs "
+        "(WARNING/ERROR levels and module checkpoints only).\n"
+        "Identify anomalies, missing module invocations, or suspicious patterns.\n\n"
+        f"Logs:\n{log_text}\n\n"
+        "Respond ONLY in JSON with this exact structure, no preamble, no markdown:\n"
+        "{\n"
+        '  "summary": "one sentence summary of log health",\n'
+        '  "anomalies": ["list of specific anomalies found, empty if none"],\n'
+        '  "missing_modules": ["list of modules expected but not seen in logs"],\n'
+        '  "anomaly_score": 0.0,\n'
+        '  "confidence": 0.0\n'
+        "}\n\n"
+        "anomaly_score: 0.0 means clean, 1.0 means highly suspicious.\n"
+        "confidence: how confident you are in this analysis, 0.0 to 1.0."
+    )
 
     logger.info("LLM call invoked", extra={"status": "called"})
 
