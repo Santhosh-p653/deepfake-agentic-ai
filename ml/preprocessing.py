@@ -1,4 +1,5 @@
 import cv2
+import hashlib
 import numpy as np
 from pathlib import Path
 from shared.signal import Signal
@@ -32,8 +33,51 @@ def _safe_resolve(file_path: str) -> Path:
     return resolved
 
 
+def _extract_source_metadata(path: Path) -> dict:
+    """
+    Extracts forensic metadata for source verification.
+    Runs before any CV processing — operates on raw bytes only.
+    """
+    file_bytes = path.read_bytes()
+    file_hash = hashlib.sha256(file_bytes).hexdigest()
+    file_size = len(file_bytes)
+    suffix = path.suffix.lower()
+
+    has_metadata = False
+    exif_fields_found = []
+
+    if suffix in (".jpg", ".jpeg"):
+        try:
+            import piexif
+            exif_data = piexif.load(file_bytes)
+            has_metadata = any(
+                exif_data.get(ifd) for ifd in ("0th", "Exif", "GPS", "1st")
+            )
+            if has_metadata:
+                exif_fields_found = list(exif_data.get("0th", {}).keys())
+        except Exception:
+            has_metadata = False
+
+    elif suffix == ".png":
+        has_metadata = b"tEXt" in file_bytes or b"iTXt" in file_bytes
+
+    elif suffix == ".mp4":
+        has_metadata = b"moov" in file_bytes and b"udta" in file_bytes
+
+    return {
+        "file_hash": file_hash,
+        "file_size_bytes": file_size,
+        "has_metadata": has_metadata,
+        "exif_fields_found": exif_fields_found,
+        "extension": suffix,
+    }
+
+
 def preprocess(file_path: str) -> Signal:
-    logger.info(f"Preprocessing invoked — file={Path(file_path).name}", extra={"status": "called"})
+    logger.info(
+        f"Preprocessing invoked — file={Path(file_path).name}",
+        extra={"status": "called"}
+    )
 
     try:
         path = _safe_resolve(file_path)
@@ -42,6 +86,10 @@ def preprocess(file_path: str) -> Signal:
         raise
 
     suffix = path.suffix.lower()
+
+    logger.info("Source metadata extraction invoked", extra={"status": "called"})
+    source_meta = _extract_source_metadata(path)
+    logger.info("Source metadata extraction complete", extra={"status": "success"})
 
     try:
         if suffix in (".jpg", ".jpeg", ".png"):
@@ -57,7 +105,8 @@ def preprocess(file_path: str) -> Signal:
     reliability = _compute_reliability(quality, extra)
 
     logger.info(
-        f"Preprocessing complete — frames={len(data)} quality={round(quality, 4)} reliability={reliability}",
+        f"Preprocessing complete — frames={len(data)} "
+        f"quality={round(quality, 4)} reliability={reliability}",
         extra={"status": "success"}
     )
 
@@ -70,6 +119,7 @@ def preprocess(file_path: str) -> Signal:
             "type": suffix,
             "frames": len(data),
             "quality_score": quality,
+            "source": source_meta,
             **extra,
         },
     )
