@@ -52,17 +52,9 @@ def process(payload: dict):
         logger.warning("Missing minio_object in payload", extra={"status": "error"})
         return {"error": "minio_object is required"}
 
-    # Fix #1: only extract the suffix from user input — never use minio_object
-    # as a path component directly, preventing path traversal via object keys
-    ext = Path(minio_object).suffix.lower()
-    if ext not in ALLOWED_SUFFIXES:
-        logger.warning(
-            f"Rejected unsupported extension — {ext!r}",
-            extra={"status": "error"}
-        )
-        return {"error": "Unsupported file type"}
-
-    filename = f"{uuid.uuid4()}{ext}"
+    # Use a trusted local temp filename that does not depend on user input.
+    # This prevents untrusted data from influencing filesystem paths.
+    filename = f"{uuid.uuid4()}.bin"
 
     # Fix #2: initialise tmp_path before try so finally block never hits NameError
     # Fix #3: keep as Path throughout — only cast to str at call sites that need it
