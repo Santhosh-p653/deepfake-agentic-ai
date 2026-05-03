@@ -113,4 +113,3 @@ class TestFastAPIAppSmoke:
         assert (
             response.status_code == 200
         ), f"GET /health returned {response.status_code} — add a /health endpoint"
-        
