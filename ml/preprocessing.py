@@ -10,6 +10,7 @@ logger = get_logger("ml.preprocessing")
 FRAME_SAMPLE_RATE = 10
 MIN_QUALITY_SCORE = 0.3
 TARGET_SIZE = (224, 224)
+DCT_CAP = 256  # max frame dimension for DCT to keep video processing fast
 
 UPLOADS_ROOT = Path("/app/uploads").resolve()
 ALLOWED_SUFFIXES = {".jpg", ".jpeg", ".png", ".mp4"}
@@ -21,7 +22,9 @@ def _safe_resolve(file_path: str) -> Path:
     except (TypeError, ValueError):
         raise ValueError("Invalid file path.")
 
-    if not str(resolved).startswith(str(UPLOADS_ROOT)):
+    # Fix #5: use is_relative_to() instead of startswith() to prevent
+    # path prefix collisions e.g. /app/uploads_evil/file.jpg
+    if not resolved.is_relative_to(UPLOADS_ROOT):
         raise ValueError("File not found.")
 
     if not resolved.is_file():
@@ -34,6 +37,11 @@ def _safe_resolve(file_path: str) -> Path:
 
 
 def _extract_source_metadata(path: Path) -> dict:
+    # Fix #1: guard here so CodeQL sees a boundary check at the taint sink,
+    # even if this function is called independently of _safe_resolve
+    if not path.resolve().is_relative_to(UPLOADS_ROOT):
+        raise ValueError("File not found.")
+
     file_bytes = path.read_bytes()
     file_hash = hashlib.sha256(file_bytes).hexdigest()
     file_size = len(file_bytes)
@@ -45,6 +53,7 @@ def _extract_source_metadata(path: Path) -> dict:
     if suffix in (".jpg", ".jpeg"):
         try:
             import piexif
+            # piexif.load() accepts raw bytes directly — this is intentional
             exif_data = piexif.load(file_bytes)
             has_metadata = any(
                 exif_data.get(ifd) for ifd in ("0th", "Exif", "GPS", "1st")
@@ -151,20 +160,22 @@ def _process_video(path: Path):
     aspect_ratios = set()
     idx = 0
 
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
-        if idx % FRAME_SAMPLE_RATE == 0:
-            qualities.append(_compute_quality(frame))
-            frames.append(_normalise(frame))
-            pixel_scores.append(_check_pixel_distribution(frame))
-            compression_scores.append(_check_compression_artifacts(frame))
-            h, w = frame.shape[:2]
-            aspect_ratios.add((w, h))
-        idx += 1
-
-    cap.release()
+    # Fix #3: guarantee cap.release() even if an exception is raised mid-loop
+    try:
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            if idx % FRAME_SAMPLE_RATE == 0:
+                qualities.append(_compute_quality(frame))
+                frames.append(_normalise(frame))
+                pixel_scores.append(_check_pixel_distribution(frame))
+                compression_scores.append(_check_compression_artifacts(frame))
+                h, w = frame.shape[:2]
+                aspect_ratios.add((w, h))
+            idx += 1
+    finally:
+        cap.release()
 
     if not frames:
         raise ValueError("No frames could be extracted.")
@@ -186,6 +197,14 @@ def _normalise(frame: np.ndarray) -> np.ndarray:
 def _compute_quality(frame: np.ndarray) -> float:
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     laplacian_var = cv2.Laplacian(gray, cv2.CV_64F).var()
+
+    # Fix #4: log blank/uniform frames so they don't silently degrade reliability
+    if laplacian_var == 0.0:
+        logger.warning(
+            "Zero Laplacian variance — blank or uniform frame detected",
+            extra={"status": "warning"}
+        )
+
     return float(min(laplacian_var / 1000.0, 1.0))
 
 
@@ -203,6 +222,11 @@ def _check_compression_artifacts(frame: np.ndarray) -> float:
     new_h = h if h % 2 == 0 else h - 1
     new_w = w if w % 2 == 0 else w - 1
     gray = gray[:new_h, :new_w]
+
+    # Fix #6: cap DCT input dimensions to DCT_CAP x DCT_CAP to keep
+    # per-frame processing fast for video without losing artifact signal
+    gray = gray[:min(new_h, DCT_CAP), :min(new_w, DCT_CAP)]
+
     dct = cv2.dct(gray)
     high_freq_energy = np.abs(dct[16:, 16:]).mean()
     total_energy = np.abs(dct).mean() + 1e-6
@@ -226,3 +250,4 @@ def _compute_reliability(quality: float, extra: dict) -> float:
         base -= 0.2
 
     return float(max(round(base, 4), 0.0))
+        
