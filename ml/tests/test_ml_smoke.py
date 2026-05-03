@@ -38,9 +38,11 @@ def _warn_not_implemented(feature: str):
 class TestMLStructure:
 
     def test_ml_directory_exists(self):
+        """ml/ directory must be present at the repo root."""
         assert Path("ml").exists(), "ml/ directory must exist"
 
     def test_no_syntax_errors(self):
+        """All .py files under ml/ must parse without SyntaxError."""
         errors = []
         for f in Path("ml").rglob("*.py"):
             try:
@@ -57,6 +59,7 @@ class TestMLStructure:
 class TestMLDependencies:
 
     def test_opencv_importable(self):
+        """cv2 (OpenCV) must be importable; warns if not yet installed."""
         if not _can_import("cv2"):
             _warn_not_implemented("OpenCV (cv2)")
             return
@@ -64,9 +67,11 @@ class TestMLDependencies:
         assert cv2.__version__, "cv2 should expose a version"
 
     def test_numpy_importable(self):
+        """numpy must be importable — it is a hard dependency of the ML pipeline."""
         assert _can_import("numpy"), "numpy must be importable"
 
     def test_pillow_importable(self):
+        """Pillow (PIL) must be importable; warns if not yet installed."""
         if not _can_import("PIL"):
             _warn_not_implemented("Pillow (PIL)")
 
@@ -83,6 +88,7 @@ class TestDetectionPipeline:
     """
 
     def _get_pipeline_module(self):
+        """Attempt to import the pipeline module from several candidate paths."""
         for candidate in ("ml.pipeline", "pipeline", "ml.detector", "detector"):
             try:
                 return importlib.import_module(candidate)
@@ -91,6 +97,7 @@ class TestDetectionPipeline:
         return None
 
     def test_pipeline_module_exists(self):
+        """ml/pipeline.py (or equivalent) must be importable."""
         mod = self._get_pipeline_module()
         if mod is None:
             _warn_not_implemented("ml/pipeline.py")
@@ -146,3 +153,4 @@ class TestDetectionPipeline:
         assert "confidence" in result, "result dict must contain 'confidence'"
         assert isinstance(result["confidence"], float), "'confidence' must be a float"
         assert 0.0 <= result["confidence"] <= 1.0, "'confidence' must be between 0 and 1"
+        
