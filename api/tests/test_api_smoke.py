@@ -22,9 +22,11 @@ class TestProjectStructure:
     """Verify the api/ directory has expected files."""
 
     def test_api_directory_exists(self):
+        """api/ directory must be present at the repo root."""
         assert Path("api").exists(), "api/ directory must exist"
 
     def test_has_python_files(self):
+        """api/ must contain at least one .py file."""
         py_files = list(Path("api").rglob("*.py"))
         assert len(py_files) > 0, "api/ must contain at least one .py file"
 
@@ -45,16 +47,19 @@ class TestCoreDependencies:
     """Check that declared dependencies are actually installable."""
 
     def test_fastapi_importable(self):
+        """fastapi must be importable — it is the core API framework."""
         assert _can_import(
             "fastapi"
         ), "fastapi must be importable — add it to api/requirements.txt"
 
     def test_uvicorn_importable(self):
+        """uvicorn must be importable — it is the ASGI server for the API."""
         assert _can_import(
             "uvicorn"
         ), "uvicorn must be importable — add it to api/requirements.txt"
 
     def test_pydantic_importable(self):
+        """pydantic must be importable — it is a hard dependency of FastAPI."""
         assert _can_import(
             "pydantic"
         ), "pydantic must be importable — required by FastAPI"
@@ -108,3 +113,4 @@ class TestFastAPIAppSmoke:
         assert (
             response.status_code == 200
         ), f"GET /health returned {response.status_code} — add a /health endpoint"
+        
