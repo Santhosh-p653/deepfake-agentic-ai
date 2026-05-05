@@ -84,7 +84,7 @@ class TestFastAPIAppSmoke:
         return None
 
     def test_app_importable(self):
-        """App module should exist once api/ is wired up."""
+        """App module should exist and expose an `app` instance once api/main.py is wired up."""
         app = self._get_app()
         if app is None:
             import warnings
@@ -98,7 +98,7 @@ class TestFastAPIAppSmoke:
         assert app is not None
 
     def test_health_endpoint(self):
-        """GET /health should return 200 once implemented."""
+        """GET /health must return HTTP 200 once the endpoint is implemented."""
         try:
             from fastapi.testclient import TestClient
         except ImportError:
