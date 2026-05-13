@@ -1,4 +1,3 @@
-
 version: "3.9"
 
 services:
@@ -28,7 +27,8 @@ services:
     ports: ["8001:8001"]
     volumes:
       - uploads_data:/app/uploads
-      - ./logs:/app/logs               # added — ml logs now reach log_filter
+      - ./logs:/app/logs
+      - huggingface_cache:/root/.cache/huggingface
 
   db:
     image: "postgres:15"
@@ -77,6 +77,8 @@ volumes:
   minio_data: {}
   beszel_data: {}
   uploads_data: {}
+  huggingface_cache: {}
+
 networks:
   bridge_network:
     driver: bridge
