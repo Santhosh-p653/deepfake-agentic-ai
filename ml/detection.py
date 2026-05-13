@@ -1,52 +1,37 @@
 from typing import List
 import numpy as np
+from PIL import Image
 import torch
-import torch.nn as nn
-import torchvision.transforms as transforms
-from torchvision import models
+from transformers import AutoImageProcessor, SiglipForImageClassification
 from retinaface import RetinaFace
 from shared.signal import Signal
 from shared.logger import get_logger
 
 logger = get_logger("ml.detection")
 
-TARGET_SIZE = (224, 224)
+MODEL_NAME = "prithivMLmods/deepfake-detector-model-v1"
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# --- Xception-style head on EfficientNet-B0 (lightweight, same accuracy) ---
-# Pure Xception is heavy — EfficientNet-B0 is a practical swap for CPU inference
 _model = None
+_processor = None
 
-def _load_model() -> nn.Module:
-    global _model
+
+def _load_model():
+    global _model, _processor
     if _model is not None:
-        return _model
+        return _model, _processor
 
-    logger.info("Loading detection model", extra={"status": "called"})
-    model = models.efficientnet_b0(weights=models.EfficientNet_B0_Weights.DEFAULT)
-    # Replace classifier head for binary deepfake classification
-    model.classifier = nn.Sequential(
-        nn.Dropout(p=0.3),
-        nn.Linear(model.classifier[1].in_features, 1),
-        nn.Sigmoid(),
-    )
-    model.eval()
-    model.to(DEVICE)
-    _model = model
+    logger.info("Loading deepfake detection model", extra={"status": "called"})
+    _processor = AutoImageProcessor.from_pretrained(MODEL_NAME)
+    _model = SiglipForImageClassification.from_pretrained(MODEL_NAME)
+    _model.eval()
+    _model.to(DEVICE)
     logger.info("Detection model loaded", extra={"status": "success"})
-    return model
-
-
-_transform = transforms.Compose([
-    transforms.ToPILImage(),
-    transforms.Resize(TARGET_SIZE),
-    transforms.ToTensor(),
-    transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
-])
+    return _model, _processor
 
 
 def _detect_faces(frame_uint8: np.ndarray) -> list[np.ndarray]:
-    """Run RetinaFace on a single frame, return list of cropped face arrays."""
+    """Run RetinaFace on a frame, return cropped face arrays."""
     try:
         faces = RetinaFace.detect_faces(frame_uint8)
     except Exception:
@@ -68,14 +53,24 @@ def _detect_faces(frame_uint8: np.ndarray) -> list[np.ndarray]:
     return crops
 
 
-def _score_faces(faces: list[np.ndarray], model: nn.Module) -> list[float]:
-    """Run Xception-style model on each face crop, return deepfake scores."""
+def _score_faces(faces: list[np.ndarray], model, processor) -> list[float]:
+    """
+    Score each face crop.
+    Model labels: {"0": "fake", "1": "real"}
+    We return the fake probability (label 0) as the deepfake score.
+    """
     scores = []
-    with torch.no_grad():
-        for face in faces:
-            tensor = _transform(face).unsqueeze(0).to(DEVICE)
-            score = model(tensor).item()
-            scores.append(score)
+    for face in faces:
+        pil_img = Image.fromarray(face).convert("RGB")
+        inputs = processor(images=pil_img, return_tensors="pt")
+        inputs = {k: v.to(DEVICE) for k, v in inputs.items()}
+
+        with torch.no_grad():
+            outputs = model(**inputs)
+            probs = torch.nn.functional.softmax(outputs.logits, dim=1)
+            fake_prob = probs[0][0].item()  # index 0 = "fake"
+            scores.append(fake_prob)
+
     return scores
 
 
@@ -91,14 +86,14 @@ def detect(frames: List[np.ndarray]) -> Signal:
             metadata={"error": "no frames received"},
         )
 
-    model = _load_model()
+    model, processor = _load_model()
 
     all_scores = []
     frames_with_faces = 0
     frames_no_faces = 0
 
     for frame in frames:
-        # frames from preprocessing are float32 normalised — convert back for RetinaFace
+        # preprocessing returns float32 normalised — convert back for RetinaFace
         frame_uint8 = (frame * 255).astype(np.uint8)
         faces = _detect_faces(frame_uint8)
 
@@ -107,7 +102,7 @@ def detect(frames: List[np.ndarray]) -> Signal:
             continue
 
         frames_with_faces += 1
-        scores = _score_faces(faces, model)
+        scores = _score_faces(faces, model, processor)
         all_scores.extend(scores)
 
     if not all_scores:
@@ -129,13 +124,11 @@ def detect(frames: List[np.ndarray]) -> Signal:
     avg_score = float(np.mean(all_scores))
     max_score = float(np.max(all_scores))
     face_coverage = frames_with_faces / len(frames)
-
-    # reliability scales with how many frames had detectable faces
     reliability = round(min(face_coverage + 0.3, 1.0), 4)
 
     logger.info(
-        f"Detection complete — score={avg_score:.4f} faces_found={len(all_scores)} "
-        f"coverage={face_coverage:.2f}",
+        f"Detection complete — score={avg_score:.4f} "
+        f"faces={len(all_scores)} coverage={face_coverage:.2f}",
         extra={"status": "success"}
     )
 
@@ -151,5 +144,6 @@ def detect(frames: List[np.ndarray]) -> Signal:
             "avg_deepfake_score": avg_score,
             "max_deepfake_score": max_score,
             "face_coverage_ratio": round(face_coverage, 4),
+            "model": MODEL_NAME,
         },
     )
