@@ -1,10 +1,13 @@
-
+import hashlib
 import json
 import os
+import re
+
 from openai import OpenAI
-from shared.signal import Signal
-from shared.logger import get_logger
+
 from shared.log_filter import load_filtered_logs
+from shared.logger import get_logger
+from shared.signal import Signal
 
 logger = get_logger("agents.log_analyser")
 
@@ -12,6 +15,8 @@ client = OpenAI(
     api_key=os.getenv("SAMBANOVA_API_KEY"),
     base_url="https://api.sambanova.ai/v1",
 )
+
+_cache: dict[str, dict] = {}
 
 
 def analyse_logs() -> Signal:
@@ -28,17 +33,22 @@ def analyse_logs() -> Signal:
             metadata={"error": "no logs found after filtering"},
         )
 
-    logger.info(
-        f"Filtered logs ready — lines={len(logs)}",
-        extra={"status": "success"}
-    )
+    logger.info(f"Filtered logs ready — lines={len(logs)}", extra={"status": "success"})
 
-    analysis = _call_llm(logs)
+    cache_key = hashlib.sha256(json.dumps(logs, sort_keys=True).encode()).hexdigest()
+
+    if cache_key in _cache:
+        logger.info("Cache hit — skipping LLM call", extra={"status": "success"})
+        analysis = _cache[cache_key]
+    else:
+        analysis = _call_llm_with_retry(logs)
+        _cache[cache_key] = analysis
+
     score, reliability = _parse_analysis(analysis)
 
     logger.info(
         f"Log analysis complete — score={score} reliability={reliability}",
-        extra={"status": "success"}
+        extra={"status": "success"},
     )
 
     return Signal(
@@ -53,7 +63,7 @@ def analyse_logs() -> Signal:
     )
 
 
-def _call_llm(logs: list[dict]) -> dict:
+def _call_llm_raw(logs: list[dict], temperature: float = 0.1) -> str:
     log_text = json.dumps(logs, indent=2)
 
     prompt = (
@@ -74,41 +84,63 @@ def _call_llm(logs: list[dict]) -> dict:
         "confidence: how confident you are in this analysis, 0.0 to 1.0."
     )
 
+    response = client.chat.completions.create(
+        model="gemma-3-12b-it",
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=512,
+        temperature=temperature,
+    )
+    return response.choices[0].message.content.strip()
+
+
+def _extract_json(raw: str) -> dict:
+    cleaned = re.sub(r"```(?:json)?", "", raw).replace("```", "").strip()
+    return json.loads(cleaned)
+
+
+def _call_llm_with_retry(logs: list[dict]) -> dict:
     logger.info("LLM call invoked", extra={"status": "called"})
 
+    # Attempt 1 — temperature 0.1
     try:
-        response = client.chat.completions.create(
-            model="gemma-3-12b-it",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=512,
-            temperature=0.1,
-        )
-        raw = response.choices[0].message.content.strip()
+        raw = _call_llm_raw(logs, temperature=0.1)
+        result = _extract_json(raw)
         logger.info("LLM call complete", extra={"status": "success"})
+        return result
     except Exception:
-        logger.exception("LLM call failed", extra={"status": "error"})
-        return {
-            "summary": "LLM call failed",
-            "anomalies": [],
-            "missing_modules": [],
-            "anomaly_score": 0.0,
-            "confidence": 0.0,
-        }
+        logger.warning("LLM attempt 1 failed, retrying at temperature=0.0", extra={"status": "error"})
 
+    # Attempt 2 — temperature 0.0
     try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        logger.warning(
-            "LLM response could not be parsed as JSON",
-            extra={"status": "error"}
-        )
-        return {
-            "summary": "LLM response could not be parsed",
-            "anomalies": [],
-            "missing_modules": [],
-            "anomaly_score": 0.0,
-            "confidence": 0.2,
-        }
+        raw = _call_llm_raw(logs, temperature=0.0)
+        result = _extract_json(raw)
+        logger.info("LLM retry succeeded", extra={"status": "success"})
+        return result
+    except Exception:
+        logger.exception("LLM retry failed, falling back to rule-based", extra={"status": "error"})
+
+    # Fallback
+    return _rule_based_fallback(logs)
+
+
+def _rule_based_fallback(logs: list[dict]) -> dict:
+    error_count = sum(1 for e in logs if e.get("level") == "ERROR")
+    warning_count = sum(1 for e in logs if e.get("level") == "WARNING")
+
+    anomaly_score = min(1.0, (error_count * 0.2) + (warning_count * 0.05))
+
+    logger.warning(
+        f"Rule-based fallback used — errors={error_count} warnings={warning_count}",
+        extra={"status": "error"},
+    )
+
+    return {
+        "summary": f"Rule-based fallback: {error_count} errors, {warning_count} warnings detected.",
+        "anomalies": [f"{error_count} ERROR entries found"] if error_count else [],
+        "missing_modules": [],
+        "anomaly_score": anomaly_score,
+        "confidence": 0.3,
+    }
 
 
 def _parse_analysis(analysis: dict) -> tuple[float, float]:
