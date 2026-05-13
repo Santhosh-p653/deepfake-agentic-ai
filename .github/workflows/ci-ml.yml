@@ -70,12 +70,14 @@ jobs:
       - name: Install test dependencies
         run: |
           pip install pytest numpy pydantic
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install transformers retina-face Pillow
 
       - name: Run detection tests
         env:
           PYTHONPATH: .
         run: |
-          pytest tests/test_detection.py -v --tb=short
+          pytest ml/tests/test_detection.py -v --tb=short
 
   build-and-push:
     name: Build & Push ML Image
