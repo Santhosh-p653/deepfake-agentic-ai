@@ -71,7 +71,8 @@ jobs:
         run: |
           pip install pytest numpy pydantic
           pip install torch --index-url https://download.pytorch.org/whl/cpu
-          pip install transformers retina-face Pillow
+          pip install transformers Pillow
+          pip install retina-face tf-keras
 
       - name: Run detection tests
         env:
