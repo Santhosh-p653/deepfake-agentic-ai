@@ -41,7 +41,7 @@ jobs:
           [ -f api/requirements.txt ] && pip install -r api/requirements.txt || true
 
       - name: Run API tests
-        run: pytest api/tests/ -v --tb=short || pytest tests/test_api_smoke.py -v --tb=short
+        run: pytest api/tests/ -v --tb=short
         env:
           PYTHONPATH: .
           DATABASE_URL: postgresql+psycopg2://deepfake_user:${{ secrets.POSTGRES_PASSWORD }}@localhost:5432/deepfake_db
@@ -52,7 +52,7 @@ jobs:
           POSTGRES_PORT: 5432
 
   test-ml:
-    name: Pytest — ML (partial-safe)
+    name: Pytest — ML
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -61,13 +61,14 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: "pip"
 
-      - name: Install lightweight dependencies only
+      - name: Install dependencies
         run: |
-          pip install pytest numpy Pillow
+          pip install pytest numpy pydantic Pillow
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install transformers retina-face tf-keras
 
-      - name: Run ML tests (warnings allowed, syntax errors fail)
-        run: pytest ml/tests/ -v --tb=short -W default || pytest tests/test_ml_smoke.py -v --tb=short -W default
+      - name: Run ML tests
+        run: pytest ml/tests/test_detection.py -v --tb=short
         env:
           PYTHONPATH: .
