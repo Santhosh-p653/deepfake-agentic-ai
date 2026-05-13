@@ -1,4 +1,3 @@
-
 name: CI — ML Service
 
 on:
@@ -54,10 +53,34 @@ jobs:
               print('\n'.join(errors)); sys.exit(1)
           print('All Python files parsed OK')"
 
+  test:
+    name: Detection Unit Tests (ML)
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install test dependencies
+        run: |
+          pip install pytest numpy pydantic
+
+      - name: Run detection tests
+        env:
+          PYTHONPATH: .
+        run: |
+          pytest tests/test_detection.py -v --tb=short
+
   build-and-push:
     name: Build & Push ML Image
     runs-on: ubuntu-latest
-    needs: lint
+    needs: [lint, test]
     permissions:
       contents: read
       packages: write
