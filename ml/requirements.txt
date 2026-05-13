@@ -6,4 +6,6 @@ minio
 piexif
 torch
 torchvision
+transformers
 retina-face
+Pillow
