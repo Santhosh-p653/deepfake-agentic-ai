@@ -57,7 +57,7 @@ def _score_faces(faces: list[np.ndarray], model, processor) -> list[float]:
     """
     Score each face crop.
     Model labels: {"0": "fake", "1": "real"}
-    We return the fake probability (label 0) as the deepfake score.
+    Returns fake probability (label 0) as the deepfake score.
     """
     scores = []
     for face in faces:
@@ -69,6 +69,7 @@ def _score_faces(faces: list[np.ndarray], model, processor) -> list[float]:
             outputs = model(**inputs)
             probs = torch.nn.functional.softmax(outputs.logits, dim=1)
             fake_prob = probs[0][0].item()  # index 0 = "fake"
+            fake_prob = max(0.0, min(1.0, fake_prob))  # clamp per-face
             scores.append(fake_prob)
 
     return scores
@@ -93,7 +94,6 @@ def detect(frames: List[np.ndarray]) -> Signal:
     frames_no_faces = 0
 
     for frame in frames:
-        # preprocessing returns float32 normalised — convert back for RetinaFace
         frame_uint8 = (frame * 255).astype(np.uint8)
         faces = _detect_faces(frame_uint8)
 
@@ -121,8 +121,8 @@ def detect(frames: List[np.ndarray]) -> Signal:
             },
         )
 
-    avg_score = float(np.mean(all_scores))
-    max_score = float(np.max(all_scores))
+    avg_score = max(0.0, min(1.0, float(np.mean(all_scores))))  # clamp
+    max_score = max(0.0, min(1.0, float(np.max(all_scores))))   # clamp
     face_coverage = frames_with_faces / len(frames)
     reliability = round(min(face_coverage + 0.3, 1.0), 4)
 
