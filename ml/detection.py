@@ -4,7 +4,7 @@ import numpy as np
 from PIL import Image
 import torch
 from transformers import AutoImageProcessor, SiglipForImageClassification
-from retinaface.pre_trained_models import get_model as get_retinaface_model
+from retinaface.inference_framework import RetinaFaceDetector
 from shared.signal import Signal
 from shared.logger import get_logger
 
@@ -24,10 +24,7 @@ def _load_retinaface():
         return _retinaface
 
     logger.info("Loading RetinaFace model", extra={"status": "called"})
-    _retinaface = get_retinaface_model(
-        "resnet50_2020-07-20", max_size=2048, device=DEVICE
-    )
-    _retinaface.eval()
+    _retinaface = RetinaFaceDetector()
     logger.info("RetinaFace model loaded", extra={"status": "success"})
     return _retinaface
 
