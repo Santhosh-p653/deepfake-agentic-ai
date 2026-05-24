@@ -4,7 +4,7 @@ import numpy as np
 from PIL import Image
 import torch
 from transformers import AutoImageProcessor, SiglipForImageClassification
-from retinaface.inference_framework import RetinaFaceDetector
+from face_detection import RetinaFace as RetinaFaceDetector
 from shared.signal import Signal
 from shared.logger import get_logger
 
@@ -24,7 +24,7 @@ def _load_retinaface():
         return _retinaface
 
     logger.info("Loading RetinaFace model", extra={"status": "called"})
-    _retinaface = RetinaFaceDetector()
+    _retinaface = RetinaFaceDetector(gpu_id=-1)  # -1 = CPU
     logger.info("RetinaFace model loaded", extra={"status": "success"})
     return _retinaface
 
@@ -47,19 +47,22 @@ def _detect_faces(frame_uint8: np.ndarray) -> list[np.ndarray]:
     """Run RetinaFace (PyTorch) on a frame, return cropped face arrays."""
     try:
         detector = _load_retinaface()
-        # retinaface-py expects RGB uint8
+        # face-detection expects RGB uint8
         frame_rgb = cv2.cvtColor(frame_uint8, cv2.COLOR_BGR2RGB)
-        annotations = detector.predict_jsons(frame_rgb)
+        results = detector([frame_rgb])  # takes a list, returns list of lists
+        detections = results[0]          # results for first image
     except Exception:
+        return []
+
+    if not detections:
         return []
 
     crops = []
     h, w = frame_uint8.shape[:2]
-    for ann in annotations:
-        bbox = ann.get("bbox")
-        if not bbox or ann.get("score", 0) < 0.5:
+    for box, landmarks, score in detections:
+        if score < 0.5:
             continue
-        x1, y1, x2, y2 = [int(v) for v in bbox]
+        x1, y1, x2, y2 = [int(v) for v in box]
         x1, y1 = max(0, x1), max(0, y1)
         x2, y2 = min(w, x2), min(h, y2)
         crop = frame_uint8[y1:y2, x1:x2]
