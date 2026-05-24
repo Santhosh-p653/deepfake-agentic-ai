@@ -2,7 +2,7 @@ import requests
 from fastapi import FastAPI
 from agents.log_analyser import analyse_logs
 from agents.ml_client import call_ml
-from agents.aggregator import aggregate
+from agents.aggregator import aggregate, compute_path3a_weights
 from agents.decider import decide
 from agents.source_verifier import verify
 from shared.signal import Signal
@@ -47,17 +47,17 @@ def run(payload: dict):
     preprocessing = Signal(**ml_result["preprocessing"])
     detection = Signal(**ml_result["detection"])
 
-    # Source verification — reads from preprocessing metadata
+    # Source verification
     logger.info("Source verifier invoked", extra={"status": "called"})
     source_signal = verify(preprocessing)
     logger.info("Source verifier complete", extra={"status": "success"})
 
-    # Analyse logs
+    # Log analysis
     logger.info("Log analyser invoked", extra={"status": "called"})
     log_signal = analyse_logs()
     logger.info("Log analyser complete", extra={"status": "success"})
 
-    # Aggregate all four signals
+    # First aggregation — reliability-weighted
     logger.info("Aggregator invoked", extra={"status": "called"})
     aggregated = aggregate(preprocessing, detection, log_signal, source_signal)
     logger.info(
@@ -65,15 +65,38 @@ def run(payload: dict):
         extra={"status": "success"}
     )
 
-    # Decide verdict
+    # First decision
     logger.info("Decider invoked", extra={"status": "called"})
     decision = decide(aggregated, record_id)
     logger.info(
-        f"Decision complete — verdict={decision['verdict']}",
+        f"Decision complete — verdict={decision['verdict']} "
+        f"reanalysis={decision.get('reanalysis')}",
         extra={"status": "success"}
     )
 
-    # Send verdict back to API
+    # Path 3a — middle zone reanalysis with uniform weight boost
+    if decision.get("reanalysis") and decision.get("reanalysis_path") == "3a":
+        logger.info(
+            "Path 3a reanalysis triggered — applying uniform weight boost",
+            extra={"status": "called"}
+        )
+        boosted_weights = compute_path3a_weights(aggregated["weight_breakdown"])
+        aggregated = aggregate(
+            preprocessing, detection, log_signal, source_signal,
+            weight_overrides=boosted_weights,
+        )
+        logger.info(
+            f"Path 3a re-aggregation complete — score={aggregated['aggregated_score']}",
+            extra={"status": "success"}
+        )
+        decision = decide(aggregated, record_id)
+        decision["reanalysis_path"] = "3a_complete"
+        logger.info(
+            f"Path 3a decision complete — verdict={decision['verdict']}",
+            extra={"status": "success"}
+        )
+
+    # Send verdict to API
     try:
         logger.info("Sending verdict to API", extra={"status": "called"})
         requests.post(
