@@ -3,8 +3,8 @@ import cv2
 import numpy as np
 from PIL import Image
 import torch
+import face_detection
 from transformers import AutoImageProcessor, SiglipForImageClassification
-from face_detection import RetinaFace as RetinaFaceDetector
 from shared.signal import Signal
 from shared.logger import get_logger
 
@@ -24,7 +24,11 @@ def _load_retinaface():
         return _retinaface
 
     logger.info("Loading RetinaFace model", extra={"status": "called"})
-    _retinaface = RetinaFaceDetector(gpu_id=-1)  # -1 = CPU
+    _retinaface = face_detection.build_detector(
+        "RetinaNetMobileNetV1",
+        confidence_threshold=0.5,
+        nms_iou_threshold=0.3,
+    )
     logger.info("RetinaFace model loaded", extra={"status": "success"})
     return _retinaface
 
@@ -47,24 +51,24 @@ def _detect_faces(frame_uint8: np.ndarray) -> list[np.ndarray]:
     """Run RetinaFace (PyTorch) on a frame, return cropped face arrays."""
     try:
         detector = _load_retinaface()
-        # face-detection expects RGB uint8
+        # face_detection expects RGB uint8
         frame_rgb = cv2.cvtColor(frame_uint8, cv2.COLOR_BGR2RGB)
-        results = detector([frame_rgb])  # takes a list, returns list of lists
-        detections = results[0]          # results for first image
+        # returns array of shape [N, 5] -> x1, y1, x2, y2, score
+        detections = detector.detect(frame_rgb)
     except Exception:
         return []
 
-    if not detections:
+    if detections is None or len(detections) == 0:
         return []
 
     crops = []
     h, w = frame_uint8.shape[:2]
-    for box, landmarks, score in detections:
+    for det in detections:
+        x1, y1, x2, y2, score = det
         if score < 0.5:
             continue
-        x1, y1, x2, y2 = [int(v) for v in box]
-        x1, y1 = max(0, x1), max(0, y1)
-        x2, y2 = min(w, x2), min(h, y2)
+        x1, y1 = max(0, int(x1)), max(0, int(y1))
+        x2, y2 = min(w, int(x2)), min(h, int(y2))
         crop = frame_uint8[y1:y2, x1:x2]
         if crop.size > 0:
             crops.append(crop)
