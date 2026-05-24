@@ -1,9 +1,10 @@
 from typing import List
+import cv2
 import numpy as np
 from PIL import Image
 import torch
 from transformers import AutoImageProcessor, SiglipForImageClassification
-from retinaface import RetinaFace
+from retinaface.pre_trained_models import get_model as get_retinaface_model
 from shared.signal import Signal
 from shared.logger import get_logger
 
@@ -14,6 +15,21 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 _model = None
 _processor = None
+_retinaface = None
+
+
+def _load_retinaface():
+    global _retinaface
+    if _retinaface is not None:
+        return _retinaface
+
+    logger.info("Loading RetinaFace model", extra={"status": "called"})
+    _retinaface = get_retinaface_model(
+        "resnet50_2020-07-20", max_size=2048, device=DEVICE
+    )
+    _retinaface.eval()
+    logger.info("RetinaFace model loaded", extra={"status": "success"})
+    return _retinaface
 
 
 def _load_model():
@@ -31,19 +47,22 @@ def _load_model():
 
 
 def _detect_faces(frame_uint8: np.ndarray) -> list[np.ndarray]:
-    """Run RetinaFace on a frame, return cropped face arrays."""
+    """Run RetinaFace (PyTorch) on a frame, return cropped face arrays."""
     try:
-        faces = RetinaFace.detect_faces(frame_uint8)
+        detector = _load_retinaface()
+        # retinaface-py expects RGB uint8
+        frame_rgb = cv2.cvtColor(frame_uint8, cv2.COLOR_BGR2RGB)
+        annotations = detector.predict_jsons(frame_rgb)
     except Exception:
-        return []
-
-    if not isinstance(faces, dict):
         return []
 
     crops = []
     h, w = frame_uint8.shape[:2]
-    for face in faces.values():
-        x1, y1, x2, y2 = face["facial_area"]
+    for ann in annotations:
+        bbox = ann.get("bbox")
+        if not bbox or ann.get("score", 0) < 0.5:
+            continue
+        x1, y1, x2, y2 = [int(v) for v in bbox]
         x1, y1 = max(0, x1), max(0, y1)
         x2, y2 = min(w, x2), min(h, y2)
         crop = frame_uint8[y1:y2, x1:x2]
