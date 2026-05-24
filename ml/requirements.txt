@@ -5,5 +5,5 @@ uvicorn
 minio
 piexif
 transformers
-retinaface-py
+face-detection
 Pillow
