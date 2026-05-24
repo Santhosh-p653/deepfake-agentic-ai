@@ -64,9 +64,11 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install pytest numpy pydantic Pillow
-          pip install torch --index-url https://download.pytorch.org/whl/cpu
-          pip install transformers retina-face tf-keras
+          pip install pytest "numpy<2.0" pydantic Pillow
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          pip install face-detection
+          pip install "transformers[torch]" tokenizers sentencepiece
+          pip install opencv-python-headless
 
       - name: Run ML tests
         run: pytest ml/tests/test_detection.py -v --tb=short
