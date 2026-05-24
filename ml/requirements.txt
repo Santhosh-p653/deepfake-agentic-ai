@@ -5,5 +5,5 @@ uvicorn
 minio
 piexif
 transformers
-retina-face
+retinaface-py
 Pillow
