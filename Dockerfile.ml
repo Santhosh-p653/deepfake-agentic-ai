@@ -8,7 +8,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY ml/requirements.txt .
 
 # CPU-only torch — pinned to 2.4.0 (numpy<2.0 compatible, transformers compatible)
 RUN pip install --no-cache-dir --default-timeout=300 --retries=5 \
@@ -16,6 +15,8 @@ RUN pip install --no-cache-dir --default-timeout=300 --retries=5 \
     --index-url https://download.pytorch.org/whl/cpu
 
 # Rest of deps
+COPY ml/requirements.txt .
+
 RUN pip install --no-cache-dir --default-timeout=300 --retries=5 \
     -r requirements.txt
 
