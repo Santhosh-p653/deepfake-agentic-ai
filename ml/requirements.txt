@@ -4,6 +4,10 @@ fastapi
 uvicorn
 minio
 piexif
-transformers
+
+transformers==4.46.3
+accelerate
+safetensors
+
 face-detection
 Pillow
