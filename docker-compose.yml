@@ -1,41 +1,18 @@
 version: "3.9"
 
 services:
-  api:
-    build: {context: ".", dockerfile: "Dockerfile.api"}
-    ports: ["8000:8000"]
-    env_file: [".env"]
-    depends_on: ["db", "minio"]
-    networks: ["bridge_network"]
-    volumes:
-      - ./logs:/app/logs
-      - uploads_data:/app/uploads
-
-  agents:
-    build: {context: ".", dockerfile: "Dockerfile.agents"}
-    env_file: [".env"]
-    depends_on: ["api", "ml"]
-    ports: ["8123:8123"]
-    networks: ["bridge_network"]
-    volumes:
-      - ./logs:/app/logs
-
-  ml:
-    build: {context: ".", dockerfile: "Dockerfile.ml"}
-    env_file: [".env"]
-    networks: ["bridge_network"]
-    ports: ["8001:8001"]
-    volumes:
-      - uploads_data:/app/uploads
-      - ./logs:/app/logs
-      - huggingface_cache:/root/.cache/huggingface
-
   db:
     image: "postgres:15"
     restart: "always"
     env_file: [".env"]
     volumes: ["postgres_data:/var/lib/postgresql/data"]
     networks: ["bridge_network"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $POSTGRES_USER -d $POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   minio:
     image: minio/minio
@@ -48,6 +25,50 @@ services:
     command: server /data --console-address ":9001"
     volumes: ["minio_data:/data"]
     networks: ["bridge_network"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  api:
+    build: {context: ".", dockerfile: "Dockerfile.api"}
+    ports: ["8000:8000"]
+    env_file: [".env"]
+    depends_on:
+      db:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks: ["bridge_network"]
+    volumes:
+      - ./logs:/app/logs
+      - uploads_data:/app/uploads
+      - ./tests:/app/tests
+
+  ml:
+    build: {context: ".", dockerfile: "Dockerfile.ml"}
+    env_file: [".env"]
+    networks: ["bridge_network"]
+    ports: ["8001:8001"]
+    volumes:
+      - uploads_data:/app/uploads
+      - ./logs:/app/logs
+      - huggingface_cache:/root/.cache/huggingface
+
+  agents:
+    build: {context: ".", dockerfile: "Dockerfile.agents"}
+    env_file: [".env"]
+    depends_on:
+      api:
+        condition: service_started
+      ml:
+        condition: service_started
+    ports: ["8123:8123"]
+    networks: ["bridge_network"]
+    volumes:
+      - ./logs:/app/logs
 
   dozzle:
     image: amir20/dozzle:latest
