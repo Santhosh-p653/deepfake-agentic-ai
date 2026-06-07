@@ -30,7 +30,6 @@ def poll_result(record_id, timeout=JOB_TIMEOUT):
             status = (data.get("status") or "").lower()
             verdict = (data.get("verdict") or "").lower()
 
-            # unified completion condition
             if status in ["completed", "done"] or verdict not in ["pending", "processing", "queued"]:
                 return data
 
@@ -118,7 +117,7 @@ with engine.connect() as conn:
             UPDATE test_fixtures SET
                 predicted_label   = :predicted,
                 confidence_score  = :score,
-                agent_reasoning   = :reasoning::jsonb,
+                agent_reasoning   = CAST(:reasoning AS jsonb),
                 verified_result   = :correct,
                 evaluation_run_id = :run_id
             WHERE id = :id
