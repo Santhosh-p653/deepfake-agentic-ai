@@ -68,9 +68,17 @@ def run(payload: dict):
     log_signal = analyse_logs()
     logger.info("Log analyser complete", extra={"status": "success"})
 
-    # First aggregation — reliability-weighted
+    # First aggregation — detection-boosted weights
     logger.info("Aggregator invoked", extra={"status": "called"})
-    aggregated = aggregate(preprocessing, detection, log_signal, source_signal)
+    aggregated = aggregate(
+        preprocessing, detection, log_signal, source_signal,
+        weight_overrides={
+            "preprocessing": 0.1,
+            "detection": 0.7,
+            "log_analysis": 0.1,
+            "source": 0.1,
+        }
+    )
     logger.info(
         f"Aggregation complete — score={aggregated['aggregated_score']}",
         extra={"status": "success"}
