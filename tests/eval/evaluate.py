@@ -10,11 +10,13 @@ API_URL = os.getenv("API_URL", "http://localhost:8000")
 engine = create_engine(DATABASE_URL)
 run_id = str(uuid.uuid4())
 
+COOLDOWN_SECONDS = 10  # wait between uploads to let pipeline clear
 
-def poll_result(record_id, timeout=60):
+
+def poll_result(record_id, timeout=120):
     for _ in range(timeout):
         try:
-            r = requests.get(f"{API_URL}/result/{record_id}")
+            r = requests.get(f"{API_URL}/result/{record_id}", timeout=10)
             r.raise_for_status()
             data = r.json()
             if data.get("verdict") != "pending":
@@ -41,12 +43,15 @@ with engine.connect() as conn:
     results = []
     timeouts = 0
 
-    for row in rows:
+    for i, row in enumerate(rows):
+        print(f"\n[{i+1}/{len(rows)}] Processing {row.filename}...")
+
         try:
             with open(row.file_path, "rb") as f:
                 resp = requests.post(
                     f"{API_URL}/upload",
-                    files={"file": f}
+                    files={"file": f},
+                    timeout=30
                 )
             resp.raise_for_status()
             record_id = resp.json()["record_id"]
@@ -63,6 +68,9 @@ with engine.connect() as conn:
         if not result:
             print(f"Timeout: {row.filename} — skipping")
             timeouts += 1
+            if i < len(rows) - 1:
+                print(f"Cooling down {COOLDOWN_SECONDS}s...")
+                time.sleep(COOLDOWN_SECONDS)
             continue
 
         predicted = result.get("verdict", "").lower()
@@ -102,6 +110,10 @@ with engine.connect() as conn:
 
         marker = "~" if predicted == "flag_for_review" else ("✓" if correct else "✗")
         print(f"{row.filename}: {row.ground_truth} → {predicted} {marker} ({latency:.1f}s)")
+
+        if i < len(rows) - 1:
+            print(f"Cooling down {COOLDOWN_SECONDS}s...")
+            time.sleep(COOLDOWN_SECONDS)
 
     conn.commit()
 
