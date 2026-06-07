@@ -7,26 +7,45 @@ from sqlalchemy import create_engine, text
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 API_URL = os.getenv("API_URL", "http://localhost:8000")
+
 engine = create_engine(DATABASE_URL)
 run_id = str(uuid.uuid4())
 
-COOLDOWN_SECONDS = 10  # wait between uploads to let pipeline clear
+JOB_TIMEOUT = 120   # max wait per file
+POLL_INTERVAL = 2   # polling frequency
 
 
-def poll_result(record_id, timeout=120):
-    for _ in range(timeout):
+# ---------------------------
+# JOB POLLING (ROBUST)
+# ---------------------------
+def poll_result(record_id, timeout=JOB_TIMEOUT):
+    start = time.time()
+
+    while True:
         try:
             r = requests.get(f"{API_URL}/result/{record_id}", timeout=10)
             r.raise_for_status()
             data = r.json()
-            if data.get("verdict") != "pending":
+
+            status = (data.get("status") or "").lower()
+            verdict = (data.get("verdict") or "").lower()
+
+            # unified completion condition
+            if status in ["completed", "done"] or verdict not in ["pending", "processing", "queued"]:
                 return data
+
         except Exception as e:
-            print(f"Poll error for {record_id}: {e}")
-        time.sleep(1)
-    return None
+            print(f"[POLL ERROR] {record_id}: {e}")
+
+        if time.time() - start > timeout:
+            return None
+
+        time.sleep(POLL_INTERVAL)
 
 
+# ---------------------------
+# LOAD DATA
+# ---------------------------
 with engine.connect() as conn:
     rows = conn.execute(
         text("""
@@ -38,46 +57,58 @@ with engine.connect() as conn:
 
     real_count = sum(1 for r in rows if r.ground_truth == "real")
     fake_count = sum(1 for r in rows if r.ground_truth == "fake")
+
     print(f"\nLoaded {len(rows)} fixtures — Real: {real_count}, Fake: {fake_count}")
 
     results = []
     timeouts = 0
 
+    # ---------------------------
+    # MAIN LOOP (STRICT SEQUENTIAL)
+    # ---------------------------
     for i, row in enumerate(rows):
-        print(f"\n[{i+1}/{len(rows)}] Processing {row.filename}...")
+        print(f"\n[{i+1}/{len(rows)}] Processing {row.filename}")
 
+        # -------- SUBMIT JOB --------
         try:
             with open(row.file_path, "rb") as f:
                 resp = requests.post(
                     f"{API_URL}/upload",
                     files={"file": f},
-                    timeout=30
+                    timeout=60
                 )
-            resp.raise_for_status()
-            record_id = resp.json()["record_id"]
+
+            # do NOT assume only 200
+            if resp.status_code not in [200, 201, 202]:
+                raise Exception(f"Bad status: {resp.status_code} - {resp.text}")
+
+            data = resp.json()
+
+            record_id = data.get("record_id") or data.get("job_id")
+            if not record_id:
+                raise Exception(f"No record_id returned: {data}")
+
         except Exception as e:
-            print(f"Upload failed: {row.filename}: {e}")
+            print(f"[UPLOAD FAILED] {row.filename}: {e}")
             continue
 
-        print(f"Uploaded {row.filename} → record_id: {record_id}")
+        print(f"Uploaded → record_id: {record_id}")
 
+        # -------- WAIT FOR RESULT --------
         start = time.time()
         result = poll_result(record_id)
         latency = time.time() - start
 
         if not result:
-            print(f"Timeout: {row.filename} — skipping")
+            print(f"[TIMEOUT] {row.filename}")
             timeouts += 1
-            if i < len(rows) - 1:
-                print(f"Cooling down {COOLDOWN_SECONDS}s...")
-                time.sleep(COOLDOWN_SECONDS)
             continue
 
-        predicted = result.get("verdict", "").lower()
+        predicted = (result.get("verdict") or "").lower()
         score = result.get("score")
         signals = result.get("signals", {})
 
-        # Option B — review is neither correct nor incorrect
+        # -------- GROUND TRUTH CHECK --------
         if predicted == "flag_for_review":
             correct = None
         else:
@@ -111,13 +142,12 @@ with engine.connect() as conn:
         marker = "~" if predicted == "flag_for_review" else ("✓" if correct else "✗")
         print(f"{row.filename}: {row.ground_truth} → {predicted} {marker} ({latency:.1f}s)")
 
-        if i < len(rows) - 1:
-            print(f"Cooling down {COOLDOWN_SECONDS}s...")
-            time.sleep(COOLDOWN_SECONDS)
-
     conn.commit()
 
-# --- Metrics ---
+
+# ---------------------------
+# METRICS
+# ---------------------------
 total = len(results)
 review_count = sum(1 for r in results if r["predicted"] == "flag_for_review")
 decisive = total - review_count
@@ -128,44 +158,31 @@ fp = sum(1 for r in results if r["ground_truth"] == "real" and r["predicted"] ==
 fn = sum(1 for r in results if r["ground_truth"] == "fake" and r["predicted"] == "real")
 
 precision = tp / (tp + fp) if (tp + fp) else 0
-recall    = tp / (tp + fn) if (tp + fn) else 0
-f1        = 2 * precision * recall / (precision + recall) if (precision + recall) else 0
-accuracy  = (tp + tn) / decisive if decisive else 0
-coverage  = decisive / total if total else 0
-
-real_scores = [r["score"] for r in results if r["ground_truth"] == "real" and r["score"] is not None]
-fake_scores = [r["score"] for r in results if r["ground_truth"] == "fake" and r["score"] is not None]
-real_mean = sum(real_scores) / len(real_scores) if real_scores else 0
-fake_mean = sum(fake_scores) / len(fake_scores) if fake_scores else 0
-gap = fake_mean - real_mean
+recall = tp / (tp + fn) if (tp + fn) else 0
+f1 = 2 * precision * recall / (precision + recall) if (precision + recall) else 0
+accuracy = (tp + tn) / decisive if decisive else 0
+coverage = decisive / total if total else 0
 
 latencies = [r["latency"] for r in results]
 avg_latency = sum(latencies) / len(latencies) if latencies else 0
 p95_latency = sorted(latencies)[int(len(latencies) * 0.95)] if latencies else 0
 
 print(f"\n--- Evaluation Run: {run_id} ---")
-print(f"Total evaluated: {total} / {len(rows)}")
+print(f"Total evaluated: {total}")
 
-print(f"\nConfusion Matrix (decisive only)")
-print(f"  TP: {tp}  FN: {fn}")
-print(f"  FP: {fp}  TN: {tn}")
+print(f"\nConfusion Matrix")
+print(f"TP: {tp} FN: {fn}")
+print(f"FP: {fp} TN: {tn}")
 
-print(f"\nCore Metrics")
-print(f"  Accuracy:  {accuracy:.2%}  (on decisive only)")
-print(f"  Precision: {precision:.2%}")
-print(f"  Recall:    {recall:.2%}")
-print(f"  F1 Score:  {f1:.2%}")
-print(f"  Coverage:  {coverage:.2%}  ({decisive}/{total} decisive)")
+print(f"\nMetrics")
+print(f"Accuracy: {accuracy:.2%}")
+print(f"Precision: {precision:.2%}")
+print(f"Recall: {recall:.2%}")
+print(f"F1: {f1:.2%}")
+print(f"Coverage: {coverage:.2%}")
 
-print(f"\nReview & Availability")
-print(f"  FLAG_FOR_REVIEW: {review_count} ({review_count/total:.2%})" if total else "  FLAG_FOR_REVIEW: 0")
-print(f"  Timeouts:        {timeouts} ({timeouts/(total+timeouts):.2%})" if (total + timeouts) else "  Timeouts: 0")
-
-print(f"\nScore Distribution")
-print(f"  Real mean: {real_mean:.4f}")
-print(f"  Fake mean: {fake_mean:.4f}")
-print(f"  Gap:       {gap:.4f}")
+print(f"\nTimeouts: {timeouts}")
 
 print(f"\nLatency")
-print(f"  Average: {avg_latency:.1f}s")
-print(f"  P95:     {p95_latency:.1f}s")
+print(f"Avg: {avg_latency:.1f}s")
+print(f"P95: {p95_latency:.1f}s")
