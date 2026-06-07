@@ -78,13 +78,13 @@ with engine.connect() as conn:
                     timeout=60
                 )
 
-            # do NOT assume only 200
             if resp.status_code not in [200, 201, 202]:
                 raise Exception(f"Bad status: {resp.status_code} - {resp.text}")
 
             data = resp.json()
 
-            record_id = data.get("record_id") or data.get("job_id")
+            # FIXED: API returns 'id', not 'record_id' or 'job_id'
+            record_id = data.get("record_id") or data.get("job_id") or data.get("id")
             if not record_id:
                 raise Exception(f"No record_id returned: {data}")
 
