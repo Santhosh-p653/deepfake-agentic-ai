@@ -4,8 +4,8 @@
 
 Deepfake Agentic AI is a sophisticated, service-oriented system designed to detect spatial and temporal
 inconsistencies in digital media. By utilizing a multi-signal pipeline — preprocessing quality analysis,
-CNN-based face detection, and LLM-powered log analysis — it provides an industry-standard approach to
-verifying media authenticity.
+RetinaFace-based face detection, SiglipForImageClassification deepfake scoring, and LLM-powered log
+analysis — it provides an industry-standard approach to verifying media authenticity.
 
 ---
 
@@ -18,10 +18,10 @@ learning inference do not bottleneck the API responsiveness.
 
 1. **API Service (FastAPI + PostgreSQL)**: Accepts and validates media, manages the upload pipeline,
    stores metadata, and returns the final verdict to the client.
-2. **ML Service (OpenCV + RetinaFace + Xception)**: Preprocesses media and runs deepfake detection.
-   Each module produces a **Signal** — a score and a reliability value.
-3. **Agent Service (LangGraph + SambaNova LLM)**: Reads structured logs, identifies anomalies,
-   aggregates all signals weighted by reliability, and routes the final verdict.
+2. **ML Service (OpenCV + RetinaFace + SiglipForImageClassification)**: Preprocesses media and runs
+   deepfake detection. Each module produces a **Signal** — a score and a reliability value.
+3. **Agent Service (SambaNova LLM + Pure Python)**: Reads structured logs, identifies anomalies,
+   verifies source metadata, aggregates all signals weighted by reliability, and routes the final verdict.
 4. **Signal Contract**: Every module outputs `{ score, reliability, module, metadata }`.
    The aggregator weights signals at runtime — adaptive, not fixed constants.
 5. **Object Storage (MinIO)**: Stores processed media files with automatic 30-day expiry.
@@ -50,14 +50,15 @@ cp .env.example .env
 # Edit .env with your actual values
 
 # 3️⃣ Start the full environment
+# DB and MinIO start first (healthcheck-gated), then API, then agents
 docker compose up -d --build
 
-# 4️⃣ Start only the API service (brings DB and MinIO up with it)
-docker compose up --build api
-
-# 5️⃣ Wipe all volumes and restart clean (dev reset)
-docker compose down -v && docker compose up --build api
+# 4️⃣ Wipe all volumes and restart clean (dev reset)
+docker compose down -v && docker compose up --build
 ```
+
+> **Note:** `docker compose up` is self-ordering. DB and MinIO healthchecks must pass
+> before the API starts — no manual sequencing needed.
 
 ---
 
@@ -68,10 +69,10 @@ docker compose down -v && docker compose up --build api
 | API        | http://localhost:8000      | FastAPI — main entry point         |
 | API Docs   | http://localhost:8000/docs | Auto-generated Swagger UI          |
 | ML         | http://localhost:8001      | ML service — preprocessing + detection |
+| Agents     | http://localhost:8123      | Agent service — log analyser, aggregator, decider |
 | MinIO UI   | http://localhost:9001      | Object storage browser             |
 | Dozzle     | http://localhost:8080      | Live Docker log viewer             |
 | Beszel     | http://localhost:8090      | Container metrics dashboard        |
-| Agents     | http://localhost:8123      | Agent service — log analyser, aggregator, decider |
 
 > MinIO default credentials: `minioadmin / minioadmin` — change in production.
 
@@ -112,14 +113,9 @@ curl -X POST http://localhost:8000/upload \
 ```json
 {
   "status": "accepted",
-  "id": 1,
+  "record_id": "abc-123",
   "filename": "image.jpg",
   "size_mb": 0.452,
-  "ml_result": {
-    "deepfake_probability": 0.07,
-    "model": "stub",
-    "file_path": "/app/tmp/abc123.jpg"
-  },
   "minio_object": "def456.jpg"
 }
 ```
@@ -168,8 +164,9 @@ POST /upload
   → Push to MinIO
   → [async] POST agents/run
       → agents calls ml/process
-          → ml: preprocess → detect → return Signals
-      → agents: log analyser → Signal
+          → ml: preprocess (quality + source metadata) → detect → return Signals
+      → agents: source_verifier → Signal
+      → agents: log_analyser (Gemma via SambaNova) → Signal
       → agents: aggregate all Signals (weighted by reliability)
       → agents: decider → verdict
       → agents POST api/verdict
@@ -234,17 +231,26 @@ Every module that produces a judgment outputs this schema:
 {
   "score": 0.0,
   "reliability": 0.0,
-  "module": "ml.preprocessing",
+  "module": "ml.detection",
   "metadata": {}
 }
 ```
 
-- `score` — judgment value, 0.0 to 1.0
+- `score` — judgment value, 0.0 to 1.0 (clamped)
 - `reliability` — trust in that score, 0.0 to 1.0
 - `module` — which module produced this
 - `metadata` — module-specific context
 
 The aggregator weights signals at runtime using reliability values — not fixed constants.
+
+**Active signals (4 total):**
+
+| Module | Source | Reliability |
+|--------|--------|-------------|
+| `ml.detection` | RetinaFace + SiglipForImageClassification | Scales with face coverage ratio |
+| `ml.preprocessing` | Quality checks, frame analysis | Fixed per quality gate |
+| `agents.source_verifier` | Metadata forensics | 0.8 (deterministic) |
+| `agents.log_analyser` | Gemma LLM anomaly detection | Dynamic per confidence |
 
 ---
 
@@ -254,15 +260,16 @@ The aggregator weights signals at runtime using reliability values — not fixed
 
 | Path | Condition | Action |
 |------|-----------|--------|
-| 1 | High confidence score | Output verdict directly |
-| 2 | Low confidence score | Flag for human review |
-| 3a | Middle zone (~45–55%) | Reanalyse once, adjust all module weights uniformly |
-| 3b | 70/30 module conflict | Reanalyse once, adjust only conflicting modules |
+| 1 | score ≥ 0.7 | → FAKE |
+| 2 | score ≤ 0.3 | → REAL |
+| 3a | Middle zone ~45–55% | Reanalyse once — uniform weight boost across all modules |
+| 3b | 70/30 module conflict | Reanalyse once — targeted weight adjustment on conflicting modules only |
 
 **Governance rules:**
-- One reanalysis attempt maximum — hard blocked after one
+- One reanalysis attempt maximum — hard blocked after one (tracked per record_id)
 - Every weight adjustment logged: before, after, reason, affected modules
 - All thresholds TBD via experimentation and version-controlled
+- LLM explains verdict — does not set it
 
 ---
 
@@ -276,12 +283,12 @@ All modules emit structured JSON logs to stdout and `logs/app.log`.
   "timestamp": "2026-04-25T10:45:00.123Z",
   "level": "INFO",
   "module": "api.main",
-  "message": "Upload pipeline complete",
-  "id": 1,
-  "filename": "image.jpg",
-  "size_mb": 0.452
+  "status": "success",
+  "message": "Upload pipeline complete"
 }
 ```
+
+**Status values:** `called` · `success` · `error`
 
 **View live logs:**
 - Terminal: `docker compose logs -f api`
@@ -296,6 +303,8 @@ Create a `.env` file in the root directory. Never commit real credentials.
 ```env
 # PostgreSQL
 DATABASE_URL=postgresql://<user>:<password>@db:5432/<dbname>
+POSTGRES_USER=<user>
+POSTGRES_DB=<dbname>
 
 # MinIO
 MINIO_ENDPOINT=minio:9000
@@ -305,6 +314,9 @@ MINIO_BUCKET=deepfakemedia
 
 # SambaNova LLM (agent log analyser)
 SAMBANOVA_API_KEY=<your-key>
+
+# Beszel (optional)
+BESZEL_KEY=<your-key>
 ```
 
 All secrets are injected via GitHub Secrets in CI — never hardcoded in workflows.
@@ -319,24 +331,37 @@ deepfake-agentic-ai/
 │   ├── main.py             # FastAPI app, endpoints, upload pipeline
 │   ├── db.py               # SQLAlchemy engine, session, helpers
 │   ├── models.py           # MediaUpload ORM model, ProcessingStatus enum
-│   ├── input_validator.py  # Format and encoding validation
+│   ├── schemas.py          # Pydantic response models (schema-locked)
+│   ├── input_validator.py  # Format and encoding validation (magic bytes)
 │   ├── temp_manager.py     # Temp folder write/delete/cleanup
 │   ├── minio_client.py     # MinIO upload, lifecycle, presigned URLs
-│   ├── ml_stub.py          # ML placeholder (active until Detection unblocked)
-│   ├── logger.py           # Central JSON logger
-│   └── validate_logs.py    # CI log validation script
+│   ├── logger.py           # Local JSON logger (fallback)
+│   └── validate_schema.py  # CI schema validation script
 ├── agents/
 │   ├── main.py             # FastAPI app, /run /analyse /ping endpoints
-│   ├── log_analyser.py     # SambaNova LLM log anomaly detection
-│   ├── aggregator.py       # Runtime reliability-weighted signal aggregation
+│   ├── log_analyser.py     # Gemma (SambaNova) log anomaly detection
+│   │                       # Hardened: JSON strip, retry, SHA256 cache, rule-based fallback
+│   ├── source_verifier.py  # Metadata forensics — pure Python, no ML
+│   ├── aggregator.py       # Reliability-weighted signal aggregation (4 signals)
 │   ├── decider.py          # Threshold routing, reanalysis hard block
 │   └── ml_client.py        # HTTP client — calls ml /process
 ├── ml/
 │   ├── main.py             # FastAPI app, /process endpoint
-│   ├── preprocessing.py    # Frame extraction, quality checks, normalisation
-│   └── detection.py        # Detection stub (RetinaFace+Xception — see issue)
+│   ├── preprocessing.py    # Frame extraction, quality checks, source metadata
+│   └── detection.py        # RetinaNetMobileNetV1 + SiglipForImageClassification
+│                           # Score clamped 0–1, reliability scaled by face coverage
 ├── shared/
-│   └── signal.py           # Pydantic Signal model — shared across all services
+│   ├── signal.py           # Pydantic Signal model — shared across all services
+│   ├── logger.py           # Central structured JSON logger
+│   └── log_filter.py       # Filters logs to <20 lines for LLM consumption
+├── tests/
+│   ├── migrations/
+│   │   └── 001_create_test_fixtures.sql  # test_fixtures table schema
+│   ├── fixtures/
+│   │   ├── seed_db.py                    # Seeds DB from labels.json
+│   │   └── deepfake_subset/              # Gitignored — generate via Colab
+│   └── eval/
+│       └── evaluate.py                   # Precision / recall / F1 evaluation runner
 ├── logs/                   # JSON log output (auto-created, gitignored)
 ├── .github/
 │   └── workflows/
@@ -344,7 +369,7 @@ deepfake-agentic-ai/
 │       ├── ci-agents.yml           # Lint, format, build & push agents image
 │       ├── ci-ml.yml               # Lint, format, build & push ML image
 │       ├── ci-tests.yml            # Pytest — API and ML unit tests
-│       ├── ci-network-audit.yml    # Network audit + log validation
+│       ├── ci-network-audit.yml    # Network audit + log + schema validation
 │       └── codespaces-prebuild.yml # Codespaces image prebuild
 ├── docker-compose.yml
 ├── Dockerfile.api
@@ -356,39 +381,86 @@ deepfake-agentic-ai/
 
 ---
 
+## 🧪 Evaluation Pipeline
+
+Uses a balanced subset of the [140k Real and Fake Faces](https://www.kaggle.com/datasets/xhlulu/140k-real-and-fake-faces) Kaggle dataset, generated via Google Colab.
+
+**Generate dataset (Colab):**
+1. Run the Colab notebook to sample N real + N fake images
+2. Download `deepfake_subset.zip`
+3. Place in `tests/fixtures/`
+
+**Run evaluation:**
+```bash
+# 1. Unzip dataset
+unzip tests/fixtures/deepfake_subset.zip -d tests/fixtures/
+
+# 2. Run migration
+docker compose exec api psql $DATABASE_URL -f /app/tests/migrations/001_create_test_fixtures.sql
+
+# 3. Seed DB from labels.json
+docker compose exec api python /app/tests/fixtures/seed_db.py
+
+# 4. Run eval — uploads each image, polls verdict, computes metrics
+docker compose exec api python /app/tests/eval/evaluate.py
+```
+
+**Output:** Accuracy · Precision · Recall · F1 per evaluation run, stored in `test_fixtures` table with `evaluation_run_id`.
+
+---
+
 ## 🛠️ Implementation Status
 
-### Phase 1 — Input Pipeline & Infrastructure
+### Phase 1 — Input Pipeline & Infrastructure ✅
 
-| Step | Description                                      | Status     |
-|------|--------------------------------------------------|------------|
-| 1    | Input validation — format + encoding check       | ✅ Done    |
-| 2    | PostgreSQL metadata schema                       | ✅ Done    |
-| 3    | Docker temp folder management                    | ✅ Done    |
-| 4    | MinIO integration — push after ML, 30-day expiry | ✅ Done    |
-| 5    | Structured JSON logging across all modules       | ✅ Done    |
-| 6    | CI workflow — network audit + logging validation | ✅ Done    |
+| Step | Description                                      | Status  |
+|------|--------------------------------------------------|---------|
+| 1    | Input validation — format + encoding check       | ✅ Done |
+| 2    | PostgreSQL metadata schema                       | ✅ Done |
+| 3    | Docker temp folder management                    | ✅ Done |
+| 4    | MinIO integration — push after ML, 30-day expiry | ✅ Done |
+| 5    | Structured JSON logging across all modules       | ✅ Done |
+| 6    | CI workflow — network audit + logging validation | ✅ Done |
 
-### Phase 2 — Multi-Signal Pipeline
+### Phase 2 — Multi-Signal Pipeline ✅
 
-| Step | Description                                      | Status     |
-|------|--------------------------------------------------|------------|
-| 1    | Signal contract — shared Pydantic model          | ✅ Done    |
-| 2    | ML preprocessing — quality checks + normalisation | ✅ Done   |
-| 3    | ML detection — RetinaFace + Xception             | ⚠️ Stubbed — [see issue](https://github.com/Santhosh-p653/deepfake-agentic-ai/issues) |
-| 4    | Agent log analyser — SambaNova LLM               | ✅ Done    |
-| 5    | Aggregator + Decider — full pipeline wired       | ✅ Done    |
-| 2C   | GET /result/{id} — client verdict polling        | ✅ Done    |
+| Step | Description                                        | Status  |
+|------|----------------------------------------------------|---------|
+| 1    | Signal contract — shared Pydantic model            | ✅ Done |
+| 2    | ML preprocessing — quality checks + normalisation  | ✅ Done |
+| 3    | LLM log analyser — Gemma via SambaNova             | ✅ Done |
+| 4    | Source verifier — metadata forensics               | ✅ Done |
+| 5    | Aggregator + Decider — full pipeline wired         | ✅ Done |
+| 6    | API schema lock — Pydantic response_model enforced | ✅ Done |
+
+### Phase 3a — Real ML Detection ✅
+
+| Step | Description                                              | Status  |
+|------|----------------------------------------------------------|---------|
+| 1    | RetinaFace + SiglipForImageClassification detection      | ✅ Done |
+| 2    | 7 unit tests — mocked model, CI-passing                  | ✅ Done |
+| 3    | log_analyser hardening — retry, cache, fallback chain    | ✅ Done |
+
+### Phase 3d — Evaluation Framework 🔄
+
+| Step | Description                                        | Status       |
+|------|----------------------------------------------------|--------------|
+| 1    | test_fixtures SQL migration                        | ✅ Done      |
+| 2    | Kaggle dataset pipeline (Colab)                    | ✅ Done      |
+| 3    | seed_db.py — reads labels.json                     | ✅ Done      |
+| 4    | evaluate.py — precision/recall/F1                  | ✅ Done      |
+| 5    | Eval run + threshold tuning                        | 🔄 In Progress |
 
 ### Pending
 
 | Task | Description                                      | Status     |
 |------|--------------------------------------------------|------------|
-| —    | Real RetinaFace + Xception detection             | 🔜 Blocked by bandwidth |
-| —    | Threshold experimentation + version control      | 🔜 Needs real data |
-| —    | Decider Path 3a/3b full reanalysis logic         | 🔜 Needs real data |
+| —    | Threshold tuning from evaluate.py output         | 🔜 Next    |
+| —    | Phase 3b — Path 3a/3b weight adjustment logic    | 🔜 Planned |
+| —    | Phase 3c — Audio sync + audio deepfake detection | 🔜 Planned |
+| —    | CD pipeline — Oracle Cloud free tier             | 🔜 Planned |
+| —    | Streamlit UI — upload/poll/display               | 🔜 Planned |
 | —    | Authentication + rate limiting                   | 🔜 Planned |
-| —    | Frontend UI                                      | 🔜 Planned |
 
 ---
 
@@ -398,7 +470,7 @@ deepfake-agentic-ai/
 |------------------------|--------------------------|---------------------------------------------------|
 | `ci-api.yml`           | push/PR to main          | Black, isort, flake8, build & push API image      |
 | `ci-agents.yml`        | push/PR to main          | Black, isort, flake8, build & push agents image   |
-| `ci-ml.yml`            | push/PR to main          | Black, isort, flake8, build & push ML image       |
+| `ci-ml.yml`            | push/PR to main          | Lint, unit tests (7, mocked), build & push ML image |
 | `ci-tests.yml`         | push/PR to main          | Pytest — API and ML unit tests                    |
-| `ci-network-audit.yml` | push/PR to main          | Network audit, upload test, JSON log validation   |
+| `ci-network-audit.yml` | push/PR to main          | Network audit, upload test, log + schema validation |
 | `codespaces-prebuild`  | push to codespaces/main  | Prebuild API, agents, ML images for Codespaces    |
