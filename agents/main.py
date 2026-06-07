@@ -44,6 +44,17 @@ def run(payload: dict):
     ml_result = call_ml(minio_object, record_id)
     logger.info("ML client complete", extra={"status": "success"})
 
+    # Guard against ML error response
+    if "error" in ml_result:
+        logger.error(
+            f"ML service returned error — {ml_result['error']}",
+            extra={"status": "error"}
+        )
+        return {
+            "record_id": record_id,
+            "error": f"ML service error: {ml_result['error']}",
+        }
+
     preprocessing = Signal(**ml_result["preprocessing"])
     detection = Signal(**ml_result["detection"])
 
