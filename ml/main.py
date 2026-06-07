@@ -26,7 +26,6 @@ minio_client = Minio(
 UPLOADS_ROOT = Path("/app/uploads")
 ALLOWED_SUFFIXES = {".jpg", ".jpeg", ".png", ".mp4"}
 
-# Fix #4: ensure uploads directory exists at startup
 UPLOADS_ROOT.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI()
@@ -52,12 +51,16 @@ def process(payload: dict):
         logger.warning("Missing minio_object in payload", extra={"status": "error"})
         return {"error": "minio_object is required"}
 
-    # Use a trusted local temp filename that does not depend on user input.
-    # This prevents untrusted data from influencing filesystem paths.
-    filename = f"{uuid.uuid4()}.bin"
+    # Derive safe extension from original object name
+    original_suffix = Path(minio_object).suffix.lower()
+    if original_suffix not in ALLOWED_SUFFIXES:
+        logger.error(
+            f"Unsupported file type — {original_suffix}",
+            extra={"status": "error"}
+        )
+        return {"error": f"Unsupported file type: {original_suffix}"}
 
-    # Fix #2: initialise tmp_path before try so finally block never hits NameError
-    # Fix #3: keep as Path throughout — only cast to str at call sites that need it
+    filename = f"{uuid.uuid4()}{original_suffix}"
     tmp_path: Path | None = None
 
     try:
@@ -78,7 +81,7 @@ def process(payload: dict):
         )
 
         logger.info("Detection invoked", extra={"status": "called"})
-        detection_signal = detect(frames)  # numpy arrays stay inside ML service
+        detection_signal = detect(frames)
         logger.info(
             f"Detection complete — score={detection_signal.score}",
             extra={"status": "success"}
@@ -91,7 +94,6 @@ def process(payload: dict):
         logger.exception("Unexpected error during processing", extra={"status": "error"})
         return {"error": "Internal processing error"}
     finally:
-        # Fix #2+3: tmp_path is a Path or None — .exists()/.unlink() are safe either way
         if tmp_path is not None and tmp_path.exists():
             tmp_path.unlink()
             logger.info("Temp file cleaned up", extra={"status": "success"})
@@ -105,5 +107,4 @@ def process(payload: dict):
         "record_id": record_id,
         "preprocessing": preprocessing_signal.model_dump(),
         "detection": detection_signal.model_dump(),
-        }
-    
+    }
