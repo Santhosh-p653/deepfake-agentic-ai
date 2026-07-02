@@ -5,7 +5,7 @@ uvicorn
 minio
 piexif
 
-transformers==4.46.3
+transformers==5.3.0
 accelerate
 safetensors
 
