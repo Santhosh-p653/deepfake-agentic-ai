@@ -72,6 +72,16 @@ services:
     volumes:
       - ./logs:/app/logs
 
+  ui:
+    build: {context: ".", dockerfile: "Dockerfile.ui"}
+    ports: ["8501:8501"]
+    environment:
+      - API_URL=http://api:8000
+    depends_on:
+      api:
+        condition: service_started
+    networks: ["bridge_network"]
+
   dozzle:
     image: amir20/dozzle:latest
     ports: ["8080:8080"]

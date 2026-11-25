@@ -128,6 +128,7 @@ After:  API → HTTP request → agents service (persistent container)
 ```
 
 bridge_network (internal Docker network)
+  ├── ui           :8501  (Streamlit frontend)
   ├── api          :8000
   ├── agents       :8123
   ├── ml           (internal only)

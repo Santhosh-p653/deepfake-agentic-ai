@@ -64,15 +64,16 @@ docker compose down -v && docker compose up --build
 
 ## 🌐 Services & URLs
 
-| Service    | URL                        | Description                        |
-|------------|----------------------------|------------------------------------|
-| API        | http://localhost:8000      | FastAPI — main entry point         |
-| API Docs   | http://localhost:8000/docs | Auto-generated Swagger UI          |
-| ML         | http://localhost:8001      | ML service — preprocessing + detection |
-| Agents     | http://localhost:8123      | Agent service — log analyser, aggregator, decider |
-| MinIO UI   | http://localhost:9001      | Object storage browser             |
-| Dozzle     | http://localhost:8080      | Live Docker log viewer             |
-| Beszel     | http://localhost:8090      | Container metrics dashboard        |
+| Service        | URL                        | Description                        |
+|----------------|----------------------------|------------------------------------|
+| UI (Streamlit) | http://localhost:8501      | Forensic analysis & verdict dashboard |
+| API            | http://localhost:8000      | FastAPI — main entry point         |
+| API Docs       | http://localhost:8000/docs | Auto-generated Swagger UI          |
+| ML             | http://localhost:8001      | ML service — preprocessing + detection |
+| Agents         | http://localhost:8123      | Agent service — log analyser, aggregator, decider |
+| MinIO UI       | http://localhost:9001      | Object storage browser             |
+| Dozzle         | http://localhost:8080      | Live Docker log viewer             |
+| Beszel         | http://localhost:8090      | Container metrics dashboard        |
 
 > MinIO default credentials: `minioadmin / minioadmin` — change in production.
 
@@ -455,11 +456,11 @@ docker compose exec api python /app/tests/eval/evaluate.py
 
 | Task | Description                                      | Status     |
 |------|--------------------------------------------------|------------|
+| —    | Streamlit UI — upload/poll/display               | ✅ Done    |
 | —    | Threshold tuning from evaluate.py output         | 🔜 Next    |
 | —    | Phase 3b — Path 3a/3b weight adjustment logic    | 🔜 Planned |
 | —    | Phase 3c — Audio sync + audio deepfake detection | 🔜 Planned |
 | —    | CD pipeline — Oracle Cloud free tier             | 🔜 Planned |
-| —    | Streamlit UI — upload/poll/display               | 🔜 Planned |
 | —    | Authentication + rate limiting                   | 🔜 Planned |
 
 ---
