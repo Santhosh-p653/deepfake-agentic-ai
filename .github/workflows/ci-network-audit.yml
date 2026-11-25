@@ -1,4 +1,3 @@
-
 name: CI — Network Audit & Logging Validation
 
 on:
@@ -57,14 +56,21 @@ jobs:
             -p 9000:9000 \
             -e MINIO_ROOT_USER=minioadmin \
             -e MINIO_ROOT_PASSWORD=minioadmin \
-            minio/minio server /data
+            pgsty/silo:latest \
+            server /data
 
-          until curl -s http://localhost:9000/minio/health/live; do
+          for i in {1..30}; do
+            if curl -sf http://localhost:9000/minio/health/live; then
+              echo "MinIO ready"
+              exit 0
+            fi
             echo "Waiting for MinIO..."
             sleep 2
           done
 
-          echo "MinIO ready"
+          echo "MinIO failed to start"
+          docker logs minio
+          exit 1
 
       - name: Start API
         run: |
