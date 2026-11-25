@@ -2,15 +2,24 @@
 Schema validation for CI — verifies API responses match locked schemas.
 Run after the API is live: python api/validate_schema.py
 """
+
 import sys
+
 import requests
 
 BASE = "http://localhost:8000"
 
 UPLOAD_REQUIRED = {"status", "id", "filename", "size_mb", "minio_object"}
 RESULT_REQUIRED = {
-    "id", "filename", "file_type", "size_mb",
-    "status", "verdict", "verdict_score", "uploaded_at", "processed_at"
+    "id",
+    "filename",
+    "file_type",
+    "size_mb",
+    "status",
+    "verdict",
+    "verdict_score",
+    "uploaded_at",
+    "processed_at",
 }
 HEALTH_REQUIRED = {"status", "database"}
 
@@ -33,6 +42,7 @@ def main():
 
     # Upload
     import base64
+
     png = base64.b64decode(
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk"
         "+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="

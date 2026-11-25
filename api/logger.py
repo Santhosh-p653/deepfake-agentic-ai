@@ -1,7 +1,7 @@
+import json
 import logging
 import os
-import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 LOG_DIR = "logs"
 os.makedirs(LOG_DIR, exist_ok=True)
@@ -10,7 +10,7 @@ os.makedirs(LOG_DIR, exist_ok=True)
 class JSONFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         log_entry = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "level": record.levelname,
             "module": record.name,
             "message": record.getMessage(),

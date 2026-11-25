@@ -1,10 +1,11 @@
-
-import os
 import io
+import os
 from datetime import timedelta
+
 from minio import Minio
-from minio.lifecycleconfig import LifecycleConfig, Rule, Expiration
 from minio.commonconfig import Filter
+from minio.lifecycleconfig import Expiration, LifecycleConfig, Rule
+
 from .logger import get_logger
 
 logger = get_logger(__name__)

@@ -16,7 +16,7 @@ Client
               ├── Input Validation (format + encoding)
               ├── PostgreSQL (metadata write)
               ├── /app/tmp (temp file write, max 2)
-              ├── ML Service (inference via HTTP) ← stub until wired
+              ├── ML Service (RetinaFace + SigLIP inference via HTTP)
               ├── MinIO (file push after ML)
               └── Structured JSON Logging (all stages)
 ```
@@ -44,22 +44,21 @@ temp file management, and MinIO uploads.
 ---
 
 ### 2. ML Service
-**Role:** Deepfake detection and inference.
+**Role:** Deepfake detection and inference (System 1 Perceptual Layer).
 
-- Receives file path or bytes from API via HTTP
-- Runs RetinaFace → Xception → Transformer pipeline
-- Returns `deepfake_probability` and model metadata
-- Separate Dockerfile optimized for ML dependencies (larger image)
+- Receives file path or bytes from API via HTTP (`POST /process`)
+- Runs RetinaFace face detection and SiglipForImageClassification (`prithivMLmods/deepfake-detector-model-v1`)
+- Runs media preprocessing: Laplacian blur variance, resolution checks, and metadata extraction
+- Emits standardized `Signal` contracts `{ score, reliability, module, metadata }`
+- Separate Dockerfile optimized for ML dependencies (PyTorch, torchvision, transformers, OpenCV)
 - Keeps model weights and heavy libraries out of the API container
 - Prevents memory contention between inference and request handling
-- Currently stubbed in `ml_stub.py` — real wiring is next
 
 **Detection pipeline:**
 ```
-
-RetinaFace        → face localization + landmark alignment
-Xception CNN      → forensic feature extraction (texture artifacts)
-Transformer       → temporal coherence modeling (frame jitter/blending)
+Frame / Image 
+  ├── OpenCV Preprocessing → Quality & blur analysis → Signal(ml.preprocessing)
+  └── RetinaFace (PyTorch) → Crop & score faces via SigLIP → Signal(ml.detection)
 ```
 
 ---
@@ -204,29 +203,80 @@ All images built and pushed to GHCR on merge to `main`.
 
 ## Implementation Status
 
-### Input Pipeline
+### Phase 1 — Input Pipeline & Infrastructure ✅
 
 | Step | Description                              | Status  |
 |------|------------------------------------------|---------|
-| 1    | Input validation                         | ✅ Done |
+| 1    | Input validation (magic bytes & format)  | ✅ Done |
 | 2    | PostgreSQL metadata schema               | ✅ Done |
 | 3    | Docker temp folder management            | ✅ Done |
 | 4    | MinIO integration + 30-day lifecycle     | ✅ Done |
 | 5    | Structured JSON logging                  | ✅ Done |
 | 6    | CI network audit + logging validation    | ✅ Done |
 
-### ML Integration
+### Phase 2 — Multi-Signal Pipeline & Agents ✅
 
-| Step | Description                              | Status      |
-|------|------------------------------------------|-------------|
-| 1    | `/results/{id}` endpoint                 | 🔜 Next     |
-| 2    | Wire real ML service — replace stub      | 🔜 Planned  |
-| 3    | RetinaFace → Xception → Transformer      | 🔜 Planned  |
-| 4    | Store `deepfake_probability` in DB       | 🔜 Planned  |
+| Step | Description                                         | Status  |
+|------|-----------------------------------------------------|---------|
+| 1    | Signal contract — shared Pydantic model             | ✅ Done |
+| 2    | ML preprocessing — blur, resolution, and quality    | ✅ Done |
+| 3    | LLM log analyser — Gemma via SambaNova              | ✅ Done |
+| 4    | Source verifier — metadata forensics                | ✅ Done |
+| 5    | Aggregator + Decider — reliability weighting        | ✅ Done |
+| 6    | Streamlit UI — real-time verification dashboard     | ✅ Done |
 
-### Tests
+### Phase 3 — Detection & Evaluation Framework 🔄
 
-| Task | Description                              | Status      |
-|------|------------------------------------------|-------------|
-| —    | Parallel upload + race condition test    | 🔜 Planned  |
-| —    | Deadlock / lock contention test          | 🔜 Planned  |
+| Step | Description                                         | Status         |
+|------|-----------------------------------------------------|----------------|
+| 1    | RetinaFace + Siglip detection (`prithivMLmods`)     | ✅ Done        |
+| 2    | Unit tests with mocked ML in CI                     | ✅ Done        |
+| 3    | Evaluation pipeline on Kaggle 140k real/fake faces  | ✅ Done        |
+| 4    | Threshold tuning & calibration                      | 🔄 In Progress |
+
+---
+
+## 🔮 Future Architecture Evolution: Dual-Process Cognitive Forensics (System 1 + System 2)
+
+As detailed in [docs/roadmap.md](file:///home/santhosh/deepfake-agentic-ai/docs/roadmap.md), the system is advancing toward an uncertainty-gated **Dual-Process Cognitive Architecture**:
+
+```
+                       ┌─────────────────────────────────────────┐
+                       │               Media Input               │
+                       └────────────────────┬────────────────────┘
+                                            │
+                                            ▼
+                    ┌───────────────────────────────────────────────┐
+                    │      System 1: Fast Perceptual Reflex         │
+                    │   (SigLIP ViT + Frequency SRM/FFT Head)       │
+                    └───────────────────────┬───────────────────────┘
+                                            │
+                                            ▼
+                                ┌───────────────────────┐
+                                │  Cognitive Gatekeeper │
+                                │  (Uncertainty Check)  │
+                                └───┬───────────────┬───┘
+                                    │               │
+            Definitive Verdict      │               │ High Uncertainty /
+            (P > 0.85 or P < 0.15)  │               │ Ambiguous (0.30 - 0.70)
+                                    ▼               ▼
+                      ┌───────────────────┐   ┌───────────────────────────┐
+                      │   Fast-Path Exit  │   │  System 2: Agentic Bus    │
+                      │   (<100ms bypass) │   │  • Multi-Agent Debate     │
+                      └───────────────────┘   │  • Provenance/EXIF Check  │
+                                              │  • LLM Judge (SambaNova)  │
+                                              └─────────────┬─────────────┘
+                                                            │
+                                                            ▼
+                                              ┌───────────────────────────┐
+                                              │ Explainable Forensic Rpt  │
+                                              └───────────────────────────┘
+```
+
+### Key Architectural Enhancements
+1. **System 1 Decision Head & Triage:** Lightweight multi-signal classifier with conformal uncertainty estimation to fast-exit $>75\%$ of clean media in $<100\text{ms}$.
+2. **Cognitive Gatekeeper:** Dynamic routing that escalates only ambiguous, anomalous, or conflicting samples to System 2.
+3. **System 2 Deliberative Multi-Agent Forensics:** LangGraph-coordinated debate between visual artifact, provenance, and forensic judge agents producing legally defensible, explainable audit logs.
+4. **Metacognitive Feedback Loop:** Hard-negative feedback from System 2 deliberative verdicts to continuously fine-tune System 1 decision thresholds.
+
+*For full specification, formulas, and milestones, see [docs/roadmap.md](file:///home/santhosh/deepfake-agentic-ai/docs/roadmap.md).*

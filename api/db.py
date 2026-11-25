@@ -1,11 +1,12 @@
-
 import os
+
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.exc import SQLAlchemyError, OperationalError
-from .models import Base, ProcessingStatus
+
 from .logger import get_logger
+from .models import Base, ProcessingStatus
 
 logger = get_logger(__name__)
 
@@ -71,7 +72,9 @@ def count_active_temp_files(db) -> int:
     rows = (
         db.query(MediaUpload.id)
         .filter(
-            MediaUpload.status.in_([ProcessingStatus.temp_stored, ProcessingStatus.processing])
+            MediaUpload.status.in_(
+                [ProcessingStatus.temp_stored, ProcessingStatus.processing]
+            )
         )
         .with_for_update()
         .all()

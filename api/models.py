@@ -1,11 +1,13 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, Enum, Boolean
-from sqlalchemy.orm import declarative_base
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.types import JSON
-from datetime import datetime
 import enum
+from datetime import datetime
+
+from sqlalchemy import Boolean, Column, DateTime, Enum, Float, Integer, String
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import declarative_base
+from sqlalchemy.types import JSON
 
 Base = declarative_base()
+
 
 class ProcessingStatus(enum.Enum):
     pending = "pending"
@@ -16,6 +18,7 @@ class ProcessingStatus(enum.Enum):
     failed = "failed"
     deleted = "deleted"
 
+
 class MediaUpload(Base):
     __tablename__ = "media_uploads"
 
@@ -24,13 +27,16 @@ class MediaUpload(Base):
     filename = Column(String, nullable=False)
     file_type = Column(String, nullable=False)
     size_mb = Column(Float, nullable=False)
-    status = Column(Enum(ProcessingStatus), default=ProcessingStatus.pending, nullable=False)
+    status = Column(
+        Enum(ProcessingStatus), default=ProcessingStatus.pending, nullable=False
+    )
     uploaded_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     processed_at = Column(DateTime, nullable=True)
     temp_path = Column(String, nullable=True)
     drive_path = Column(String, nullable=True)
     verdict = Column(String, nullable=True)
     verdict_score = Column(Float, nullable=True)
+
 
 class TestFixture(Base):
     __tablename__ = "test_fixtures"

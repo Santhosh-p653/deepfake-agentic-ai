@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional
+
 
 class UploadResponse(BaseModel):
     status: str
@@ -15,16 +15,16 @@ class ResultResponse(BaseModel):
     file_type: str
     size_mb: float
     status: str
-    verdict: Optional[str]
-    verdict_score: Optional[float]
-    uploaded_at: Optional[str]
-    processed_at: Optional[str]
+    verdict: str | None
+    verdict_score: float | None
+    uploaded_at: str | None
+    processed_at: str | None
 
 
 class VerdictPayload(BaseModel):
     record_id: int
     verdict: str
-    verdict_score: Optional[float]
+    verdict_score: float | None
 
 
 class HealthResponse(BaseModel):

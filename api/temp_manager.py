@@ -1,6 +1,7 @@
 import os
 import uuid
 from pathlib import Path
+
 from .logger import get_logger
 
 logger = get_logger(__name__)
@@ -22,9 +23,7 @@ def ensure_temp_dir():
             '{"message": "chmod failed on temp dir", "path": "%s"}', TEMP_DIR
         )
 
-    logger.info(
-        '{"message": "Temp dir ready", "path": "%s"}', TEMP_DIR
-    )
+    logger.info('{"message": "Temp dir ready", "path": "%s"}', TEMP_DIR)
 
 
 def write_to_temp(file_bytes: bytes, original_filename: str) -> str:
@@ -55,9 +54,7 @@ def delete_from_temp(temp_path: str):
 
     if path.exists():
         path.unlink()
-        logger.info(
-            '{"message": "Delete temp file", "path": "%s"}', temp_path
-        )
+        logger.info('{"message": "Delete temp file", "path": "%s"}', temp_path)
     else:
         logger.warning(
             '{"message": "Temp file already absent on delete", "path": "%s"}',
@@ -71,18 +68,21 @@ def cleanup_on_startup(db):
     1. Reset stuck processing rows to failed and delete their temp files.
     2. Delete orphaned files on disk with no active DB row.
     """
-    from .models import MediaUpload, ProcessingStatus
-    from .db import update_status
     from datetime import datetime
+
+    from .db import update_status
+    from .models import MediaUpload, ProcessingStatus
 
     if not db:
         logger.warning('{"message": "Startup cleanup skipped, no DB session"}')
         return
 
     # Reset stuck processing rows
-    stuck = db.query(MediaUpload).filter(
-        MediaUpload.status == ProcessingStatus.processing
-    ).all()
+    stuck = (
+        db.query(MediaUpload)
+        .filter(MediaUpload.status == ProcessingStatus.processing)
+        .all()
+    )
 
     for row in stuck:
         if row.temp_path:
@@ -103,9 +103,11 @@ def cleanup_on_startup(db):
 
     # Collect all temp_paths the DB knows about
     active_paths = set()
-    active_rows = db.query(MediaUpload).filter(
-        MediaUpload.status == ProcessingStatus.temp_stored
-    ).all()
+    active_rows = (
+        db.query(MediaUpload)
+        .filter(MediaUpload.status == ProcessingStatus.temp_stored)
+        .all()
+    )
 
     for row in active_rows:
         if row.temp_path:

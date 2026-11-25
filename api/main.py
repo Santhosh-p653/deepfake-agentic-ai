@@ -1,23 +1,26 @@
-
-import uuid
 import threading
 import time
-import requests
+import uuid
 from datetime import datetime
-from fastapi import FastAPI, Response, status, UploadFile, File, Depends
+
+import requests
+from fastapi import Depends, FastAPI, File, Response, UploadFile, status
 from fastapi.responses import JSONResponse
-from sqlalchemy.orm import Session
 from sqlalchemy.exc import OperationalError, SQLAlchemyError
+from sqlalchemy.orm import Session
 
 from .db import check_db_connection, get_db, init_db, update_status
-from .models import MediaUpload, ProcessingStatus
-from .schemas import UploadResponse, ResultResponse, VerdictPayload, HealthResponse
 from .input_validator import validate_input
-from .temp_manager import (
-    ensure_temp_dir, write_to_temp, delete_from_temp, cleanup_on_startup
-)
-from .minio_client import ensure_bucket, upload_to_minio
 from .logger import get_logger
+from .minio_client import ensure_bucket, upload_to_minio
+from .models import MediaUpload, ProcessingStatus
+from .schemas import HealthResponse, ResultResponse, UploadResponse, VerdictPayload
+from .temp_manager import (
+    cleanup_on_startup,
+    delete_from_temp,
+    ensure_temp_dir,
+    write_to_temp,
+)
 
 logger = get_logger("api.main")
 
@@ -33,7 +36,7 @@ def init_db_with_retry(max_retries=10, delay=3):
         except (OperationalError, SQLAlchemyError) as e:
             logger.warning(
                 f"DB not ready, retrying ({attempt}/{max_retries}): {e}",
-                extra={"status": "error"}
+                extra={"status": "error"},
             )
             time.sleep(delay)
 
@@ -48,6 +51,7 @@ def on_startup():
     ensure_bucket()
 
     from .db import SessionLocal
+
     if SessionLocal:
         db = SessionLocal()
         try:
@@ -64,7 +68,9 @@ async def health(response: Response):
     if db_status:
         logger.info("Health check passed", extra={"status": "success"})
         return HealthResponse(status="ok", database="connected")
-    logger.warning("Health check failed — database disconnected", extra={"status": "error"})
+    logger.warning(
+        "Health check failed — database disconnected", extra={"status": "error"}
+    )
     response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     return HealthResponse(status="error", database="disconnected")
 
@@ -81,8 +87,7 @@ async def run_agents():
     try:
         response = requests.get("http://agents:8123/ping", timeout=10)
         logger.info(
-            f"Agents responded with {response.status_code}",
-            extra={"status": "success"}
+            f"Agents responded with {response.status_code}", extra={"status": "success"}
         )
         return response.json()
     except Exception:
@@ -93,9 +98,7 @@ async def run_agents():
 @app.post("/verdict")
 def receive_verdict(payload: VerdictPayload, db: Session = Depends(get_db)):
     if db:
-        row = db.query(MediaUpload).filter(
-            MediaUpload.id == payload.record_id
-        ).first()
+        row = db.query(MediaUpload).filter(MediaUpload.id == payload.record_id).first()
         if row:
             row.verdict = payload.verdict
             row.verdict_score = payload.verdict_score
@@ -105,7 +108,7 @@ def receive_verdict(payload: VerdictPayload, db: Session = Depends(get_db)):
     logger.info(
         f"Verdict received — id={payload.record_id} "
         f"verdict={payload.verdict} score={payload.verdict_score}",
-        extra={"status": "success"}
+        extra={"status": "success"},
     )
     return {"status": "ok"}
 
@@ -115,19 +118,18 @@ def get_result(record_id: int, db: Session = Depends(get_db)):
     if not db:
         return JSONResponse(
             status_code=503,
-            content={"status": "error", "reason": "Database unavailable"}
+            content={"status": "error", "reason": "Database unavailable"},
         )
 
     row = db.query(MediaUpload).filter(MediaUpload.id == record_id).first()
     if not row:
         return JSONResponse(
-            status_code=404,
-            content={"status": "error", "reason": "Record not found"}
+            status_code=404, content={"status": "error", "reason": "Record not found"}
         )
 
     logger.info(
         f"Result fetched — id={record_id} status={row.status.value}",
-        extra={"status": "success"}
+        extra={"status": "success"},
     )
 
     return ResultResponse(
@@ -147,7 +149,7 @@ def get_result(record_id: int, db: Session = Depends(get_db)):
 async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db)):
     logger.info(
         f"Upload request received — filename={file.filename}",
-        extra={"status": "called"}
+        extra={"status": "called"},
     )
     file_bytes = await file.read()
 
@@ -156,9 +158,11 @@ async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db
     if not valid:
         logger.warning(
             f"Upload rejected — filename={file.filename} reason={message}",
-            extra={"status": "error"}
+            extra={"status": "error"},
         )
-        return JSONResponse(status_code=400, content={"status": "rejected", "reason": message})
+        return JSONResponse(
+            status_code=400, content={"status": "rejected", "reason": message}
+        )
 
     size_mb = round(len(file_bytes) / (1024 * 1024), 4)
     ext = file.filename.rsplit(".", 1)[-1].lower()
@@ -177,7 +181,7 @@ async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db
 
     logger.info(
         f"DB record created — id={record_id} filename={file.filename}",
-        extra={"status": "success"}
+        extra={"status": "success"},
     )
 
     # Step 3 — temp write
@@ -188,8 +192,7 @@ async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db
     object_name = f"{uuid.uuid4().hex}.{ext}"
     minio_object = upload_to_minio(temp_path, object_name)
     logger.info(
-        f"MinIO upload complete — object={minio_object}",
-        extra={"status": "success"}
+        f"MinIO upload complete — object={minio_object}", extra={"status": "success"}
     )
 
     update_status(
@@ -212,13 +215,15 @@ async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db
             )
             logger.info("Agents pipeline triggered", extra={"status": "success"})
         except Exception:
-            logger.exception("Failed to trigger agents pipeline", extra={"status": "error"})
+            logger.exception(
+                "Failed to trigger agents pipeline", extra={"status": "error"}
+            )
 
     threading.Thread(target=_run_agents, daemon=True).start()
 
     logger.info(
         f"Upload pipeline complete — id={record_id} filename={file.filename}",
-        extra={"status": "success"}
+        extra={"status": "success"},
     )
 
     return UploadResponse(

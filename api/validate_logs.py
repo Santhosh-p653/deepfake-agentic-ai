@@ -1,5 +1,5 @@
-import sys
 import json
+import sys
 
 REQUIRED_FIELDS = {"timestamp", "level", "module", "message"}
 
@@ -18,7 +18,7 @@ def validate(log_path: str):
 
     try:
         with open(log_path, "r") as f:
-            lines = [ln.strip() for ln in f.readlines() if ln.strip()]
+            lines = [ln.strip() for ln in f if ln.strip()]
     except FileNotFoundError:
         print(f"ERROR: Log file not found: {log_path}")
         sys.exit(1)
