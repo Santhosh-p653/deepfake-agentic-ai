@@ -104,8 +104,8 @@ with engine.connect() as conn:
             continue
 
         predicted = (result.get("verdict") or "").lower()
-        score = result.get("score")
-        signals = result.get("signals", {})
+        score = result.get("verdict_score") if result.get("verdict_score") is not None else result.get("score")
+        signals = result.get("signals") or {}
 
         # -------- GROUND TRUTH CHECK --------
         if predicted == "flag_for_review":
@@ -129,6 +129,7 @@ with engine.connect() as conn:
             "run_id": run_id,
             "id": row.id,
         })
+        conn.commit()
 
         results.append({
             "ground_truth": row.ground_truth,

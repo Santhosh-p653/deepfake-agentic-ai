@@ -116,29 +116,33 @@ Key fixes:
 when checking the temp file cap on upload.
 
 **Root Cause:**
-PostgreSQL does not allow `SELECT COUNT(*) ... FOR UPDATE` directly — you cannot combine
-aggregate functions with row-level locking in the same query.
+PostgreSQL does not allow `SELECT COUNT(*) ... FOR UPDATE` directly — aggregate functions cannot be combined with row-level locking in the same query. Furthermore, wrapping it in a subquery `SELECT COUNT(*) FROM (SELECT ... FOR UPDATE)` also fails in PostgreSQL with `FOR UPDATE is not allowed in a subquery in FROM`.
 
 **Solution:**
-Wrap the locked select in a subquery, count the outer result:
+Lock the individual rows by querying their IDs with `FOR UPDATE` (or SQLAlchemy's `.with_for_update()`) and count the returned rows:
 
+```python
+# Correct pattern in SQLAlchemy / Python
+rows = (
+    db.query(MediaUpload.id)
+    .filter(MediaUpload.status.in_([ProcessingStatus.temp_stored, ProcessingStatus.processing]))
+    .with_for_update()
+    .all()
+)
+active_count = len(rows)
+```
+
+Or in pure SQL:
 ```sql
--- Wrong
-SELECT COUNT(*) FROM media_uploads
-WHERE status IN ('temp_stored', 'processing')
-FOR UPDATE
-
 -- Correct
-SELECT COUNT(*) FROM (
-    SELECT id FROM media_uploads
-    WHERE status IN ('temp_stored', 'processing')
-    FOR UPDATE
-) AS locked_rows
+SELECT id FROM media_uploads
+WHERE status IN ('temp_stored', 'processing')
+FOR UPDATE;
+-- Count rows via driver / cursor rowcount
 ```
 
 **Tradeoff:**
-Slightly more verbose but necessary. The subquery locks the rows first, then the outer
-query counts them. This is the correct pattern for atomic cap enforcement under concurrent load.
+Clean, standards-compliant, and works across PostgreSQL without subquery or aggregate locking restrictions. Rows are locked for the duration of the transaction to enforce atomic cap limits under concurrent load.
 
 ---
 

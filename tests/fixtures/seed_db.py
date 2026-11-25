@@ -8,10 +8,33 @@ engine = create_engine(DATABASE_URL)
 DATASET_DIR = "tests/fixtures/deepfake_subset"
 LABELS_PATH = os.path.join(DATASET_DIR, "metadata/labels.json")
 
+if not os.path.exists(LABELS_PATH):
+    DATASET_DIR = os.path.join(os.path.dirname(__file__), "deepfake_subset")
+    LABELS_PATH = os.path.join(DATASET_DIR, "metadata/labels.json")
+
 with open(LABELS_PATH) as f:
     labels = json.load(f)
 
 with engine.connect() as conn:
+    # Ensure test_fixtures table exists
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS test_fixtures (
+            id                SERIAL PRIMARY KEY,
+            filename          TEXT NOT NULL UNIQUE,
+            file_path         TEXT NOT NULL,
+            file_type         TEXT,
+            mime_type         TEXT,
+            file_size_bytes   INTEGER,
+            ground_truth      TEXT NOT NULL,
+            predicted_label   TEXT,
+            confidence_score  FLOAT,
+            agent_reasoning   JSONB,
+            verified_result   BOOLEAN,
+            evaluation_run_id TEXT
+        );
+    """))
+    conn.commit()
+
     for rel_path, meta in labels.items():
         filename = os.path.basename(rel_path)
         file_path = os.path.join(DATASET_DIR, "images", rel_path)

@@ -7,7 +7,7 @@ from datetime import datetime
 from fastapi import FastAPI, Response, status, UploadFile, File, Depends
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import OperationalError, SQLAlchemyError
 
 from .db import check_db_connection, get_db, init_db, update_status
 from .models import MediaUpload, ProcessingStatus
@@ -30,9 +30,9 @@ def init_db_with_retry(max_retries=10, delay=3):
             init_db()
             logger.info("DB initialized successfully", extra={"status": "success"})
             return
-        except OperationalError:
+        except (OperationalError, SQLAlchemyError) as e:
             logger.warning(
-                f"DB not ready, retrying ({attempt}/{max_retries})",
+                f"DB not ready, retrying ({attempt}/{max_retries}): {e}",
                 extra={"status": "error"}
             )
             time.sleep(delay)
